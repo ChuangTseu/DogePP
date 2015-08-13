@@ -1,0 +1,5 @@
+
+#include "dummy.h"
+
+<IncludedBob value="Do not care what value is there" />
+#define _INCLUDED_FROM_BOB 1

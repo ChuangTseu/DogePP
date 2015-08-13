@@ -1,0 +1,29 @@
+
+		#include "bob.xmlh"
+
+#define BOB_DEF "MICHEL_LE"
+
+#define HE/*nocare*/Y(val /*theValue*/,eEnum /* theEnum	*/  ,	/*dummyTesterArg*/ vam /*Reaaly, it's a dummy*/) \
+	g_i = hick(val); g_ret = g_eMult * eEnum; while (g_i >= 0) { \
+		g_count += g_ret; if(eEnum != e_enum_unknow) { registerGlobalEnumWithVal(eEnum, val); } \
+	}
+
+
+int main() {
+
+	const char* cb = BOB_DEF;
+
+	#define ASTUCE_DE_GROS(porc) \
+		do /*doing nothing actually*/ { \
+			MangerDu(porc); \
+		} while(FaimDe(porc));
+
+	HEY(ho, e, u);
+
+	/* Commented stuff */
+	ASTUCE_DE_GROS(poulet);
+
+	int iValue = 3 + 2;
+	
+	return 0;
+}

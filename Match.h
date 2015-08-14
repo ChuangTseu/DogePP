@@ -9,6 +9,11 @@ inline bool isHSpace(char c)
 	return c == ' ' || c == '\t';
 }
 
+inline bool isLiteralDelimiterChar(char c)
+{
+	return c == '"' || c == '\'';
+}
+
 inline bool isLineReturn(const char* sz)
 {
 #if LR_TYPE_LF

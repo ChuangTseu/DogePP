@@ -30,6 +30,5 @@ struct Macro {
 extern std::map<std::string, Macro> g_macros;
 
 bool gMacroIsUnique(const std::string& strKey);
-
 bool gMacroInsert(const std::string& strKey, Macro macro);
-
+bool gMacroIsDefined(const std::string& strKey);

@@ -1,5 +1,5 @@
 
-		#include "bob.xmlh"
+//#include "bob.xmlh"
 
 #define BOB_DEF "MICHEL_LE"
 
@@ -13,6 +13,38 @@ int main() {
 
 	const char* cb = BOB_DEF;
 
+	#ifdef BOB_DEF
+		int BOB_DEF__isDefined;
+		#define BOB_DEF__ISDEFINED
+
+		#ifdef HE
+			int HE__isDefined;
+			#define BOB_DEF__ISDEFINED
+		#else
+			#ifdef HEY
+				int HEY__isDefined;
+				#define HEY__ISDEFINED
+			#else
+				int HEY__isNotAtAllDefined;
+				#define HEY__ISNOTATALLDEFINED
+			#endif
+			int HE__isNotAtAllDefined;
+			#define HE__ISNOTATALLDEFINED
+		#endif
+
+	#else
+		#ifdef FRANCIS
+			int FRANCIS__isDefined;
+			#define FRANCIS__ISDEFINED
+		#else
+			int FRANCIS__isNotAtAllDefined;
+			#define FRANCIS__ISNOTATALLDEFINED
+		#endif
+
+		int BOB_DEF__isNotAtAllDefined;
+		#define BOB_DEF__ISNOTATALLDEFINED
+	#endif
+
 	#define ASTUCE_DE_GROS(porc) \
 		do /*doing nothing actually*/ { \
 			MangerDu(porc); \
@@ -20,10 +52,48 @@ int main() {
 
 	HEY(ho, e, u);
 
+	#ifdef ASTUCE_DE_GROS
+
 	/* Commented stuff */
 	ASTUCE_DE_GROS(poulet);
 
+	#endif
+
 	int iValue = 3 + 2;
+
+	const char* szLiteralTest = "My fucking literal";
+
+	const char* szMultiLineLiteralTest = "My fucking literal \
+over multiple lines";
 	
-	return 0;
+	const char* szMultiLineWithEscapedLiteralTest = "My fu\'cking \\\\litera\"l \
+over multip\ele lines";
+
+	const char* szMultiLineWithEscapedAndWithErrorsLiteralTest = "My fu\'cking \\\\litera\"l \
+over multip\ele lines";
+
+#ifdef ASTUCE_DE_GROS
+#include "dummy.h"
+#include "dummy.h"
+#include "dummy.h"
+#include "dummy.h"
+#else
+#endif
+
+return 0;
+
+#define TESTNUMBER 3
+#define TESTANDER 2
+
+#define MACINC(i) (i + 1)
+
+// #if (TESTNUMBER & MACINC(TESTANDER)) && defined(TESTNUMBER)
+
+// int hey = 3;
+// #endif
+
+#define MACSTR 3
+#if MACSTR == MACSTR
+int valid;
+#endif
 }

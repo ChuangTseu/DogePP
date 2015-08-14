@@ -1,6 +1,6 @@
-
+#ifndef DUMMY_H_HEADER
 #define DUMMY_H_HEADER
-if (Include again, wouhou !) {
-	"hehe";
-}
 
+"INCLUDED DUMMY HEADER"
+
+#endif

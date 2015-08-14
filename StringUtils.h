@@ -2,6 +2,13 @@
 
 #include <string>
 
+#include "ErrorLogging.h"
+
+template <class T>
+struct npos {
+	static const T value = static_cast<T>(-1);
+};
+
 #define szEq(lsz, rsz) (!strcmp((lsz), (rsz)))
 #define szEqN(lsz, rsz, n) (!strncmp((lsz), (rsz), (n)))
 
@@ -21,5 +28,40 @@ struct SubStrLoc {
 	std::string ExtractSubStr(const std::string& strFrom) {
 		return strFrom.substr(m_start, Length());
 	}
+
+	bool IsInside(StrSizeT pos)
+	{
+		return pos >= m_start && pos < m_end;
+	}
+
+	bool IsBefore(StrSizeT pos)
+	{
+		return pos < m_start;
+	}
+
+	bool IsAfter(StrSizeT pos)
+	{
+		return pos >= m_end;
+	}
 };
+
+static const char* LUT_TabIndentLevelStr[] = {
+	"",
+	"\t",
+	"\t\t",
+	"\t\t\t",
+	"\t\t\t\t",
+	"\t\t\t\t\t",
+	"\t\t\t\t\t\t",
+	"\t\t\t\t\t\t\t",
+	"\t\t\t\t\t\t\t\t",
+	"\t\t\t\t\t\t\t\t\t",
+	"\t\t\t\t\t\t\t\t\t\t"
+};
+
+inline const char* tabIndentStr(int level)
+{
+	DOGE_ASSERT(level >= 0 && level < 10);
+	return LUT_TabIndentLevelStr[level];
+}
 

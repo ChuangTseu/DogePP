@@ -51,8 +51,9 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <UndefinePreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS</UndefinePreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;_SCL_SECURE_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>
+      </UndefinePreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -80,6 +81,8 @@
     <ClCompile Include="CharUtils.cpp" />
     <ClCompile Include="Config.cpp" />
     <ClCompile Include="DogePP.cpp" />
+    <ClCompile Include="ErrorLogging.cpp" />
+    <ClCompile Include="ExpParser.cpp" />
     <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="Macro.cpp" />
     <ClCompile Include="Match.cpp" />
@@ -91,6 +94,8 @@
     <ClInclude Include="CharUtils.h" />
     <ClInclude Include="Config.h" />
     <ClInclude Include="EnumCTTI.h" />
+    <ClInclude Include="ErrorLogging.h" />
+    <ClInclude Include="ExpParser.h" />
     <ClInclude Include="FileUtils.h" />
     <ClInclude Include="Macro.h" />
     <ClInclude Include="Match.h" />

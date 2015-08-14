@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <map>
 #include <fstream>
-#include <cassert>
 #include <memory>
 #include <streambuf>
 #include <algorithm>
@@ -25,6 +24,7 @@
 #include "StringContext.h"
 #include "CharUtils.h"
 #include "Match.h"
+#include "ErrorLogging.h"
 
 #define VEC_SIZE_T(vec) decltype(vec.size())
 
@@ -33,6 +33,7 @@
 	X(define) \
 	X(pragma) \
 	X(ifdef) \
+	X(ifndef) \
 	X(if) \
 	X(else) \
 	X(elif) \
@@ -48,6 +49,11 @@ enum EDirective {
 
 	e_directive_UNKNOWN = -1
 };
+
+bool isConditionnalDirective(EDirective eDirective)
+{
+	return (eDirective >= e_directive_ifdef && eDirective <= e_directive_endif);
+}
 
 static const char* LUT_EDirective_szName[e_directive_COUNT] =
 {
@@ -67,30 +73,17 @@ EDirective szNameToEDirective(const char* szName)
 
 const char* EDirectiveToSzName(EDirective eDirective)
 {
-	assert(eDirective >= 0 && eDirective < e_directive_COUNT);
+	DOGE_ASSERT(eDirective >= 0 && eDirective < e_directive_COUNT);
 	return LUT_EDirective_szName[eDirective];
 }
 
 DECLARE_ENUM_TEMPLATE_CTTI(EDirective)
 
+
+bool skipCtxHeadToNextValid(StrCTX& ctx);
 void preprocess_string(std::string& strBuffer);
+bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& outDirectiveStartPos);
 
-void insertString(StrCTX& ctx, StrCItT itInsertPoint, const std::string& strInserted)
-{
-	StrSizeT insertPos = ctx.ItPos(itInsertPoint);
-	ctx.baseStr.insert(insertPos, strInserted);
-
-	ctx.SetHead(insertPos + strInserted.length());
-}
-
-void replaceWithString(StrCTX& ctx, StrCItT itReplacePoint, size_t replacedLength,
-	const std::string& strInserted)
-{
-	StrSizeT insertPos = ctx.ItPos(itReplacePoint);
-	ctx.baseStr.replace(insertPos, replacedLength, strInserted);
-
-	ctx.SetHead(insertPos + strInserted.length());
-}
 
 bool skipEntireMultiLineComment(StrCTX& ctx)
 {
@@ -128,6 +121,76 @@ bool skipEntireLine(StrCTX& ctx)
 	return true;
 }
 
+char pickNextChar(StrCTX& ctx)
+{
+	char c;
+	DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
+	return ctx.HeadChar();
+	return c;
+}
+
+bool advanceToNextConditionDirective(StrCTX& ctx)
+{
+	char c;
+	while (!ctx.IsEnded() && ((c = pickNextChar(ctx)) != '#'))
+	{
+		ctx.Advance(1);
+	}
+
+	if (ctx.IsEnded())
+	{
+		return false; // Unexpected EOF
+	}
+	else
+	{
+		StrSizeT directiveStartPos;
+		EDirective eDirective;
+		if (!retrieveDirectiveType(ctx, eDirective, directiveStartPos))
+		{
+			DOGE_ASSERT_ALWAYS_MESSAGE("Error retrieving directive type.\n");
+		}
+
+		if (isConditionnalDirective(eDirective))
+		{
+			ctx.SetHead(directiveStartPos);
+			ctx.bInLineStart = true; // Was valid if retrieveDirectiveType() succeeded, need to restore it since restorinhg manually the head position
+			return true;
+		}
+		else
+		{
+			return advanceToNextConditionDirective(ctx);
+		}
+	}
+}
+
+bool advanceToEndOfLiteral(StrCTX& ctx, char litEndChar)
+{
+	char c;
+	while (!ctx.IsEnded() && ((c = pickNextChar(ctx)) != '\n') && c != litEndChar)
+	{
+		ctx.Advance(1);
+
+		if (c == '\\')
+		{
+			ctx.Advance(1); // Ignore escaped character
+		}
+	}
+
+	if (ctx.IsEnded())
+	{
+		return false; // Unexpected EOF
+	}
+	else if (ctx.HeadChar() == '\n')
+	{
+		return false; // Unexpected EOL
+	}
+	else
+	{
+		ctx.Advance(1); // Skip literal end symbol
+		return true;
+	}
+}
+
 bool skipCtxHeadToNextValid(StrCTX& ctx)
 {
 	if (ctx.IsEnded())
@@ -140,8 +203,7 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 		ctx.Advance(COMMENT_ML_START_LENGTH);
 		if (!skipEntireMultiLineComment(ctx))
 		{
-			fprintf(stderr, "Error at line %d char %d col %d. Could not correctly skip commented section (multiline comment).\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
-			exit(EXIT_FAILURE);
+			DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Could not correctly skip commented section (multiline comment).\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
 		}
 
 		return skipCtxHeadToNextValid(ctx);
@@ -152,8 +214,7 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 		ctx.Advance(COMMENT_SL_LENGTH);
 		if (!skipEntireLine(ctx))
 		{
-			fprintf(stderr, "Error at line %d char %d col %d. Could not correctly skip commented line (singleline comment).\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
-			exit(EXIT_FAILURE);
+			DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Could not correctly skip commented line (singleline comment).\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
 		}
 
 		return skipCtxHeadToNextValid(ctx);
@@ -161,8 +222,8 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 
 	if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1)) // Skip line break
 	{
-		ctx.Advance(1 + LR_LENGTH);
-
+		ctx.Erase({ ctx.CurrentPos(), ctx.CurrentPos() + 1 + LR_LENGTH }, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+		//ctx.Advance(1 + LR_LENGTH);
 		return skipCtxHeadToNextValid(ctx);
 	}
 
@@ -178,12 +239,27 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 	return true;
 }
 
-char pickNextChar(StrCTX& ctx)
+bool advanceToNextLineExpectHSpaceOnly(StrCTX& ctx)
 {
 	char c;
-	assert(skipCtxHeadToNextValid(ctx));
-	return ctx.HeadChar();
-	return c;
+	while (!ctx.IsEnded() && ((c = pickNextChar(ctx)) != '\n'))
+	{
+		if (!isHSpace(c))
+		{
+			return false; // Encountered non hspace character
+		}
+		ctx.Advance(1);
+	}
+
+	if (ctx.IsEnded())
+	{
+		return false; // Unexpected EOL
+	}
+	else
+	{
+		ctx.Advance(1); // Skip EOL symbol
+		return true;
+	}
 }
 
 void skipHSpaces(StrCTX& ctx)
@@ -255,6 +331,39 @@ bool getNextIdentifierLocation(StrCTX& ctx, SubStrLoc& outLocation, bool& isEOS)
 	return true;
 }
 
+bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& outDirectiveStartPos)
+{
+	if (!ctx.bInLineStart)
+	{
+		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Character # can only happen at start of line content.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+	}
+
+	StrSizeT directiveStartPos = ctx.CurrentPos();
+
+	DOGE_ASSERT(ctx.HeadChar() == '#');
+
+	ctx.Advance(1);
+
+	std::string strId;
+	if (!retrieveIdentifier(ctx, strId))
+	{
+		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Invalid identifier.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+	}
+
+	printf("Found # identifier #%s.\n", strId.c_str());
+
+	EDirective eDirective = szNameToEnum<EDirective>(strId.c_str());
+	if (eDirective == e_directive_UNKNOWN)
+	{
+		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Unknown directive #%s.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber, strId.c_str());
+	}
+
+	outEDirective = eDirective;
+	outDirectiveStartPos = directiveStartPos;
+
+	return true;
+}
+
 bool getCharEnclosedString(StrCTX& ctx, char c_open, char c_close,
 	std::string& strOutEnclosed)
 {
@@ -307,7 +416,7 @@ bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent)
 		}
 		else
 		{
-			assert(skipCtxHeadToNextValid(ctx));
+			DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
 			ctx.Advance(1);
 		}
 	}
@@ -318,10 +427,8 @@ bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent)
 	return true;
 }
 
-bool handleDirectiveContent_Include(StrCTX& ctx)
+bool handleDirectiveContent_Include(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#include");
-
 	if (!isHSpace(pickNextChar(ctx)))
 	{
 		return false;
@@ -363,9 +470,12 @@ bool handleDirectiveContent_Include(StrCTX& ctx)
 		return false;
 	}
 
-	preprocess_string(strIncludedFile);
+	//preprocess_string(strIncludedFile);
 
-	replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), strIncludedFile);
+	SubStrLoc replacedByIncludeZone{ directiveStartPos, ctx.CurrentPos() };
+	ctx.SetHead(directiveStartPos);
+	ctx.bInLineStart = true; // Start of file means start of line
+	ctx.Replace(replacedByIncludeZone, strIncludedFile, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
 
 	return true;
 }
@@ -377,7 +487,7 @@ bool decomposeString(const std::string& strIn, char sep, std::vector<std::string
 	
 	vOutStrDecomposed.clear();
 
-	while ((sepPos = strIn.find(sep, oldAfterSepPos)) != std::string::npos)
+	while ((sepPos = strIn.find(sep, oldAfterSepPos)) != npos<StrSizeT>::value)
 	{
 		vOutStrDecomposed.push_back(strIn.substr(oldAfterSepPos, sepPos - oldAfterSepPos));
 		oldAfterSepPos = sepPos + 1;
@@ -419,7 +529,7 @@ bool decomposeStringCleanHSpaces(const std::string& strIn, char sep, std::vector
 		return true; // Empty strings means 0 decomposed str
 	}
 
-	while ((sepPos = strIn.find(sep, sepSubLoc.m_start)) != std::string::npos)
+	while ((sepPos = strIn.find(sep, sepSubLoc.m_start)) != npos<StrSizeT>::value)
 	{
 		sepSubLoc.m_end = sepPos;
 		adjustSubStrLoc_CleanExtHSpaces(strIn, sepSubLoc);
@@ -530,10 +640,8 @@ bool parseFunctionMacroDefinition(StrCTX& ctx, Macro& outFnMacro)
 	return true;
 }
 
-bool handleDirectiveContent_Define(StrCTX& ctx)
+bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#define");
-
 	if (!isHSpace(pickNextChar(ctx)))
 	{
 		return false;
@@ -560,8 +668,9 @@ bool handleDirectiveContent_Define(StrCTX& ctx)
 			return false;
 		}
 
-		sprintf(g_sprintf_buffer, "<<< #define fn : '%s', args number : '%d', content : '%s' >>>", strDefine.c_str(), macro.m_args.size(), macro.m_strContent.c_str());
-		replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
+		//sprintf(g_sprintf_buffer, "<<< #define fn : '%s', args number : '%d', content : '%s' >>>", strDefine.c_str(), macro.m_args.size(), macro.m_strContent.c_str());
+		//SubStrLoc replacedByTmpDefineInfoZone{ directiveStartPos, ctx.CurrentPos() };
+		//ctx.Replace(replacedByTmpDefineInfoZone, std::string(g_sprintf_buffer), StrCTX::e_insidereplacedzonebehaviour_ASSERT);
 
 		gMacroInsert(strDefine, std::move(macro));
 
@@ -585,8 +694,9 @@ bool handleDirectiveContent_Define(StrCTX& ctx)
 			}
 		}
 
-		sprintf(g_sprintf_buffer, "<<< #define : '%s', content : '%s' >>>", strDefine.c_str(), macro.m_strContent.c_str());
-		replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
+		//sprintf(g_sprintf_buffer, "<<< #define : '%s', content : '%s' >>>", strDefine.c_str(), macro.m_strContent.c_str());
+		//SubStrLoc replacedByTmpDefineInfoZone{ directiveStartPos, ctx.CurrentPos() };
+		//ctx.Replace(replacedByTmpDefineInfoZone, std::string(g_sprintf_buffer), StrCTX::e_insidereplacedzonebehaviour_ASSERT);
 
 		gMacroInsert(strDefine, std::move(macro));
 
@@ -598,12 +708,8 @@ bool handleDirectiveContent_Define(StrCTX& ctx)
 	}
 }
 
-bool handleDirectiveContent_Pragma(StrCTX& ctx)
+bool handleDirectiveContent_Pragma(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	printf("handleDirectiveContent_Pragma()\n");
-
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#pragma");
-
 	skipHSpaces(ctx);
 
 	std::string strPragmaId;
@@ -618,162 +724,253 @@ bool handleDirectiveContent_Pragma(StrCTX& ctx)
 		return false;
 	}
 
-	sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
-	replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
+	//sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
+	//SubStrLoc replacedByTmpPragmaInfoZone{ directiveStartPos, ctx.CurrentPos() };
+	//ctx.Replace(replacedByTmpPragmaInfoZone, std::string(g_sprintf_buffer), StrCTX::e_insidereplacedzonebehaviour_ASSERT);
 
 	return true;
 }
 
-bool handleDirectiveContent_If(StrCTX& ctx)
+bool handleDirectiveContent_If(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	printf("handleDirectiveContent_Pragma()\n");
+	DOGE_ASSERT_MESSAGE(false, "");
+	return true;
+}
 
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#pragma");
+bool handleDirectiveContent_Ifdef(StrCTX& ctx, StrSizeT directiveStartPos)
+{
+	if (!isHSpace(pickNextChar(ctx)))
+	{
+		return false;
+	}
 
 	skipHSpaces(ctx);
 
-	std::string strPragmaId;
-	if (!retrieveIdentifier(ctx, strPragmaId))
+	std::string strTestedIdentifier;
+	if (!retrieveIdentifier(ctx, strTestedIdentifier))
 	{
 		return false;
 	}
 
-	std::string strMultilineContent;
-	if (!retrieveMultiLinePPContent(ctx, strMultilineContent))
+	bool bYieldedValue = gMacroIsDefined(strTestedIdentifier);
+
+	if (!advanceToNextLineExpectHSpaceOnly(ctx))
 	{
-		return false;
+		return false; // Garbage after tested #ifdef identifier
 	}
 
-	sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
-	replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
+	bool bSkipToNextDirective = (bYieldedValue == false);
+
+	RunningIfInfo runningIfInfo;
+	runningIfInfo.bElseIsDone = false;
+	runningIfInfo.bTrueIsDone = bYieldedValue;
+	runningIfInfo.start_replaced_zone = directiveStartPos;
+	
+	runningIfInfo.level = g_ifCtx.runningIfStack.size();
+	
+	printf("%s#ifdef at pos %d yields %s\n", tabIndentStr(runningIfInfo.level), 
+		directiveStartPos, bYieldedValue ? "'true'" : "'false'");
+	
+	if (bYieldedValue)
+	{
+		runningIfInfo.start_remaining_zone = ctx.CurrentPos();
+		runningIfInfo.bExpectingEndRemainingLineInfo = true;
+	}
+	
+	g_ifCtx.RegisterTopRunningInfoSubLocsIfAny(ctx);
+	g_ifCtx.runningIfStack.push(runningIfInfo);
+
+	if (bSkipToNextDirective)
+	{
+		return advanceToNextConditionDirective(ctx);
+	}
 
 	return true;
 }
 
-bool handleDirectiveContent_Elif(StrCTX& ctx)
+bool handleDirectiveContent_Ifndef(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	printf("handleDirectiveContent_Pragma()\n");
-
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#pragma");
+	if (!isHSpace(pickNextChar(ctx)))
+	{
+		return false;
+	}
 
 	skipHSpaces(ctx);
 
-	std::string strPragmaId;
-	if (!retrieveIdentifier(ctx, strPragmaId))
+	std::string strTestedIdentifier;
+	if (!retrieveIdentifier(ctx, strTestedIdentifier))
 	{
 		return false;
 	}
 
-	std::string strMultilineContent;
-	if (!retrieveMultiLinePPContent(ctx, strMultilineContent))
+	bool bYieldedValue = !gMacroIsDefined(strTestedIdentifier);
+
+	if (!advanceToNextLineExpectHSpaceOnly(ctx))
 	{
-		return false;
+		return false; // Garbage after tested #ifdef identifier
 	}
 
-	sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
-	replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
+	bool bSkipToNextDirective = (bYieldedValue == false);
+
+	RunningIfInfo runningIfInfo;
+	runningIfInfo.bElseIsDone = false;
+	runningIfInfo.bTrueIsDone = bYieldedValue;
+	runningIfInfo.start_replaced_zone = directiveStartPos;
+
+	runningIfInfo.level = g_ifCtx.runningIfStack.size();
+
+	printf("%s#ifndef at pos %d yields %s\n", tabIndentStr(runningIfInfo.level),
+		directiveStartPos, bYieldedValue ? "'true'" : "'false'");
+
+	if (bYieldedValue)
+	{
+		runningIfInfo.start_remaining_zone = ctx.CurrentPos();
+		runningIfInfo.bExpectingEndRemainingLineInfo = true;
+	}
+
+	g_ifCtx.RegisterTopRunningInfoSubLocsIfAny(ctx);
+	g_ifCtx.runningIfStack.push(runningIfInfo);
+
+	if (bSkipToNextDirective)
+	{
+		return advanceToNextConditionDirective(ctx);
+	}
 
 	return true;
 }
 
-bool handleDirectiveContent_Ifdef(StrCTX& ctx)
+bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	printf("handleDirectiveContent_Pragma()\n");
-
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#pragma");
-
-	skipHSpaces(ctx);
-
-	std::string strPragmaId;
-	if (!retrieveIdentifier(ctx, strPragmaId))
-	{
-		return false;
-	}
-
-	std::string strMultilineContent;
-	if (!retrieveMultiLinePPContent(ctx, strMultilineContent))
-	{
-		return false;
-	}
-
-	sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
-	replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
-
+	DOGE_ASSERT_MESSAGE(false, "");
 	return true;
 }
 
-bool handleDirectiveContent_Else(StrCTX& ctx)
+bool handleDirectiveContent_Else(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	printf("handleDirectiveContent_Pragma()\n");
+	DOGE_ASSERT_MESSAGE(g_ifCtx.runningIfStack.size() > 0, "Unexpected #else : no opening clause before\n");
 
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#pragma");
-
-	skipHSpaces(ctx);
-
-	std::string strPragmaId;
-	if (!retrieveIdentifier(ctx, strPragmaId))
+	if (!advanceToNextLineExpectHSpaceOnly(ctx))
 	{
-		return false;
+		return false; // Garbage after #else
 	}
 
-	std::string strMultilineContent;
-	if (!retrieveMultiLinePPContent(ctx, strMultilineContent))
+	RunningIfInfo& runningIfInfo = g_ifCtx.runningIfStack.top();
+
+	DOGE_ASSERT_MESSAGE(!runningIfInfo.bElseIsDone, "Unexpected #else : #else for this clause has already been processed\n");
+
+	bool bSkipToNextDirective = runningIfInfo.bTrueIsDone;
+
+	runningIfInfo.bElseIsDone = true;
+
+	if (runningIfInfo.bTrueIsDone)
 	{
-		return false;
+		printf("%s#else at pos %d yields %s\n", tabIndentStr(runningIfInfo.level), directiveStartPos, "'whatever'");
+
+		if (runningIfInfo.bExpectingEndRemainingLineInfo)
+		{
+			runningIfInfo.end_remaining_zone = directiveStartPos;
+			runningIfInfo.bExpectingEndRemainingLineInfo = false;
+		}
+		else
+		{
+			// Nothing
+		}
+	}
+	else
+	{
+		runningIfInfo.bTrueIsDone = true; // Mandatory if else is reached while not true_is_set
+
+		printf("%s#else at pos %d triggers mandatory %s\n", tabIndentStr(runningIfInfo.level), directiveStartPos, "'true'");
+
+		runningIfInfo.start_remaining_zone = ctx.CurrentPos();
+		runningIfInfo.bExpectingEndRemainingLineInfo = true;
 	}
 
-	sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
-	replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
+	if (bSkipToNextDirective)
+	{
+		return advanceToNextConditionDirective(ctx);
+	}
 
 	return true;
 }
 
-bool handleDirectiveContent_Endif(StrCTX& ctx)
+bool handleDirectiveContent_Endif(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	printf("handleDirectiveContent_Pragma()\n");
-
-	StrCItT itIncludeInsertPoint = ctx.head - strlen("#pragma");
-
-	skipHSpaces(ctx);
-
-	std::string strPragmaId;
-	if (!retrieveIdentifier(ctx, strPragmaId))
+	if (!advanceToNextLineExpectHSpaceOnly(ctx))
 	{
-		return false;
+		return false; // Garbage after #endif
 	}
 
-	std::string strMultilineContent;
-	if (!retrieveMultiLinePPContent(ctx, strMultilineContent))
+	DOGE_ASSERT_MESSAGE(g_ifCtx.runningIfStack.size() > 0, "Unexpected #endif : no opening clause before\n");
+
+	RunningIfInfo& runningIfInfo = g_ifCtx.runningIfStack.top();
+
+	if (runningIfInfo.bTrueIsDone)
 	{
-		return false;
+		if (runningIfInfo.bExpectingEndRemainingLineInfo)
+		{
+			runningIfInfo.end_remaining_zone = directiveStartPos;
+			runningIfInfo.bExpectingEndRemainingLineInfo = false;
+		}
+		else
+		{
+			// Nothing
+		}
 	}
 
-	sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
-	replaceWithString(ctx, itIncludeInsertPoint, std::distance(itIncludeInsertPoint, ctx.head), std::string(g_sprintf_buffer));
+	runningIfInfo.end_replaced_zone = ctx.CurrentPos();
+
+	printf("%s#endif at pos %d\n", tabIndentStr(runningIfInfo.level), directiveStartPos);
+
+	if (runningIfInfo.bTrueIsDone)
+	{
+		printf("%s---> Replacing zone [%d, %d[ with zone [%d, %d[\n", tabIndentStr(runningIfInfo.level),
+			runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone,
+			runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone);
+
+		SubStrLoc replacedSubLoc{ runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone };
+		SubStrLoc fillingdSubLoc{ runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone };
+		ctx.Replace(replacedSubLoc, fillingdSubLoc, StrCTX::e_insidereplacedzonebehaviour_ASSERT);
+	}
+	else
+	{
+		printf("%s---> No selected zone.\n", tabIndentStr(runningIfInfo.level));
+
+		SubStrLoc erasedSubLoc{ runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone };
+		//ctx.Replace(replacedSubLoc, std::string{}, StrCTX::e_insidereplacedzonebehaviour_ASSERT);
+		ctx.Erase(erasedSubLoc, StrCTX::e_insidereplacedzonebehaviour_ASSERT);
+	}
+
+	printf("\n");
+
+	g_ifCtx.runningIfStack.pop();
+	g_ifCtx.UnregisterTopRunningInfoSubLocsIfAny(ctx);
 
 	return true;
 }
 
-bool handleDirectiveContent(StrCTX& ctx, EDirective eDirective)
+bool handleDirectiveContent(StrCTX& ctx, EDirective eDirective, StrSizeT directiveStartPos)
 {
 	switch (eDirective)
 	{
 	case e_directive_include:
-		return handleDirectiveContent_Include(ctx);
+		return handleDirectiveContent_Include(ctx, directiveStartPos);
 	case e_directive_define:
-		return handleDirectiveContent_Define(ctx);
+		return handleDirectiveContent_Define(ctx, directiveStartPos);
 	case e_directive_pragma:
-		return handleDirectiveContent_Pragma(ctx);
+		return handleDirectiveContent_Pragma(ctx, directiveStartPos);
 	case e_directive_if:
-		return handleDirectiveContent_If(ctx);
+		return handleDirectiveContent_If(ctx, directiveStartPos);
 	case e_directive_ifdef:
-		return handleDirectiveContent_Ifdef(ctx);
+		return handleDirectiveContent_Ifdef(ctx, directiveStartPos);
+	case e_directive_ifndef:
+		return handleDirectiveContent_Ifndef(ctx, directiveStartPos);
 	case e_directive_elif:
-		return handleDirectiveContent_Elif(ctx);
+		return handleDirectiveContent_Elif(ctx, directiveStartPos);
 	case e_directive_else:
-		return handleDirectiveContent_Else(ctx);
+		return handleDirectiveContent_Else(ctx, directiveStartPos);
 	case e_directive_endif:
-		return handleDirectiveContent_Endif(ctx);
+		return handleDirectiveContent_Endif(ctx, directiveStartPos);
 	default:
 		return false;
 	}
@@ -787,77 +984,54 @@ void preprocess_string(std::string& strBuffer)
 
 	while (!ctx.IsEnded())
 	{
-		assert(skipCtxHeadToNextValid(ctx));
-		if (pickNextChar(ctx) == ' ')
+		//DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
+		char c = pickNextChar(ctx);
+		if (c == ' ')
 		{
 			ctx.Advance(1);
 
 			++ctx.charNumber;
 			++ctx.colNumber;
 		}
-		else if (pickNextChar(ctx) == '\t')
+		else if (c == '\t')
 		{
 			ctx.Advance(1);
 
 			++ctx.charNumber;
 			ctx.colNumber += 4;
 		}
-		else if (pickNextChar(ctx) == '\n')
+		else if (c == '\n')
 		{
 			printf("Line return at line %d.\n", ctx.lineNumber);
 
 			ctx.Advance(1);
 
 			++ctx.lineNumber;
-			ctx.bInLineStart = true;
 
 			ctx.charNumber = 1;
 			ctx.colNumber = 1;
 		}
-		else if (pickNextChar(ctx) == '#') {
-			if (!ctx.bInLineStart)
+		else if (c == '#') {
+			StrSizeT directiveStartPos;
+			EDirective eDirective;
+			if (!retrieveDirectiveType(ctx, eDirective, directiveStartPos))
 			{
-				fprintf(stderr, "Error at line %d char %d col %d. Character # can only happen at start of line content.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
-				exit(EXIT_FAILURE);
+				DOGE_ASSERT_ALWAYS_MESSAGE("Error retrieving directive type.\n");
 			}
 
+			if (!handleDirectiveContent(ctx, eDirective, directiveStartPos))
+			{
+				DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Invalid directive content.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			}
+		}
+		else if (isLiteralDelimiterChar(c))
+		{
 			ctx.Advance(1);
-
-			ctx.bInLineStart = false;
-
-			++ctx.charNumber;
-			++ctx.colNumber;
-
-			std::string strId;
-			if (!retrieveIdentifier(ctx, strId))
-			{
-				fprintf(stderr, "Error at line %d char %d col %d. Invalid identifier.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
-				exit(EXIT_FAILURE);
-			}
-
-			ctx.charNumber += strId.length();
-			ctx.colNumber += strId.length();
-
-			printf("Found # identifier #%s.\n", strId.c_str());
-
-			EDirective eDirective = szNameToEnum<EDirective>(strId.c_str());
-			if (eDirective == e_directive_UNKNOWN)
-			{
-				fprintf(stderr, "Error at line %d char %d col %d. Unknown directive #%s.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber, strId.c_str());
-				exit(EXIT_FAILURE);
-			}
-
-			if (!handleDirectiveContent(ctx, eDirective))
-			{
-				fprintf(stderr, "Error at line %d char %d col %d. Invalid directive content.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
-				exit(EXIT_FAILURE);
-			}
+			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d char %d col %d. Invalid literal termination.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
 		}
 		else
 		{
 			ctx.Advance(1);
-
-			ctx.bInLineStart = false;
 
 			++ctx.charNumber;
 			++ctx.colNumber;
@@ -886,7 +1060,7 @@ struct CondiTestInfo {
 
 std::vector<CondiTestInfo> condiTestData {
 	{ e_directive_if, 12, true },
-	{ e_directive_if, 14, false },
+	{ e_directive_ifndef, 14, false },
 	{ e_directive_elif, 17, true },
 	{ e_directive_ifdef, 19, false },
 	{ e_directive_else, 21, {} },
@@ -897,40 +1071,24 @@ std::vector<CondiTestInfo> condiTestData {
 	{ e_directive_endif, 33, {} },
 };
 
-const char* tabIndentStr(int level)
-{
-	switch (level)
-	{
-	case 0: return "";
-	case 1: return "\t";
-	case 2: return "\t\t";
-	case 3: return "\t\t\t";
-	case 4: return "\t\t\t\t";
-	case 5: return "\t\t\t\t\t";
-	case 6: return "\t\t\t\t\t\t";
-	case 7: return "\t\t\t\t\t\t\t";
-	case 8: return "\t\t\t\t\t\t\t\t";
-
-	default: assert(false); return "";
-	}
-}
-
 int main(int argc, char* argv[])
 {
-	//std::string strFile;
-	//assert(readFileToString("testfile.txt", strFile));
-	//preprocess_string(strFile);
+	std::string strFile;
+	DOGE_ASSERT(readFileToString("testfile.txt", strFile));
+	preprocess_string(strFile);
 
-	//std::cout << "===================== BOF =====================\n";
-	//std::cout << strFile;
-	//std::cout << "===================== EOF =====================\n\n";
+	std::cout << "===================== BOF =====================\n";
+	std::cout << strFile;
+	std::cout << "===================== EOF =====================\n\n";
 
-	//std::cout << "Global macros : \n";
+	std::cout << "Global macros : \n";
 
-	//for (const auto& globalMacro : g_macros)
-	//{
-	//	std::cout << "\t-" << globalMacro.second.m_name << '\n';
-	//}
+	for (const auto& globalMacro : g_macros)
+	{
+		std::cout << "\t-" << globalMacro.second.m_name << '\n';
+	}
+
+	return 0;
 
 	std::string strExclDirTest;
 
@@ -939,8 +1097,6 @@ int main(int argc, char* argv[])
 		strExclDirTest += std::to_string(i);
 		strExclDirTest += '\n';
 	}
-
-	IfCtx ifCtx;
 
 	for (size_t nCond = 0; nCond < condiTestData.size(); ++nCond)
 	{
@@ -956,7 +1112,7 @@ int main(int argc, char* argv[])
 			runningIfInfo.bTrueIsDone = currentCond.bYields;
 			runningIfInfo.start_replaced_zone = currentCond.linePos;
 
-			runningIfInfo.level = ifCtx.runningIfStack.size();
+			runningIfInfo.level = g_ifCtx.runningIfStack.size();
 
 			printf("%s#if at line %d yields %s\n", tabIndentStr(runningIfInfo.level), 
 				currentCond.linePos, currentCond.bYields ? "'true'" : "'false'");
@@ -967,41 +1123,18 @@ int main(int argc, char* argv[])
 				runningIfInfo.bExpectingEndRemainingLineInfo = true;
 			}
 
-			ifCtx.runningIfStack.push(runningIfInfo);
-		}
-
-			break;
-
-		case e_directive_ifdef:
-		{
-			RunningIfInfo runningIfInfo;
-			runningIfInfo.bElseIsDone = false;
-			runningIfInfo.bTrueIsDone = currentCond.bYields;
-			runningIfInfo.start_replaced_zone = currentCond.linePos;
-
-			runningIfInfo.level = ifCtx.runningIfStack.size();
-
-			printf("%s#ifdef at line %d yields %s\n", tabIndentStr(runningIfInfo.level), 
-				currentCond.linePos, currentCond.bYields ? "'true'" : "'false'");
-
-			if (currentCond.bYields)
-			{
-				runningIfInfo.start_remaining_zone = currentCond.linePos + 1;
-				runningIfInfo.bExpectingEndRemainingLineInfo = true;
-			}
-
-			ifCtx.runningIfStack.push(runningIfInfo);
+			g_ifCtx.runningIfStack.push(runningIfInfo);
 		}
 
 			break;
 
 		case e_directive_elif:
 		{
-			assert(ifCtx.runningIfStack.size() > 0);
+			DOGE_ASSERT(g_ifCtx.runningIfStack.size() > 0);
 
-			RunningIfInfo& runningIfInfo = ifCtx.runningIfStack.top();
+			RunningIfInfo& runningIfInfo = g_ifCtx.runningIfStack.top();
 
-			assert(!runningIfInfo.bElseIsDone);
+			DOGE_ASSERT(!runningIfInfo.bElseIsDone);
 
 			if (runningIfInfo.bTrueIsDone)
 			{
@@ -1034,104 +1167,14 @@ int main(int argc, char* argv[])
 
 			break;
 
-		case e_directive_else:
-		{
-			assert(ifCtx.runningIfStack.size() > 0);
-
-			RunningIfInfo& runningIfInfo = ifCtx.runningIfStack.top();
-
-			assert(!runningIfInfo.bElseIsDone);
-
-			runningIfInfo.bElseIsDone = true;
-
-			if (runningIfInfo.bTrueIsDone)
-			{
-				printf("%s#else at line %d yields %s\n", tabIndentStr(runningIfInfo.level), currentCond.linePos, "'whatever'");
-
-				if (runningIfInfo.bExpectingEndRemainingLineInfo)
-				{
-					runningIfInfo.end_remaining_zone = currentCond.linePos;
-					runningIfInfo.bExpectingEndRemainingLineInfo = false;
-				}
-				else
-				{
-					// Nothing
-				}
-			}
-			else
-			{
-				runningIfInfo.bTrueIsDone = true; // Mandatory if else is reached while not true_is_set
-
-				printf("%s#else at line %d triggers mandatory %s\n", tabIndentStr(runningIfInfo.level), currentCond.linePos, "'true'");
-
-				runningIfInfo.start_remaining_zone = currentCond.linePos + 1;
-				runningIfInfo.bExpectingEndRemainingLineInfo = true;
-			}
-		}
-
-			break;
-
-		case e_directive_endif:
-		{
-			assert(ifCtx.runningIfStack.size() > 0);
-
-			RunningIfInfo& runningIfInfo = ifCtx.runningIfStack.top();
-
-			if (runningIfInfo.bTrueIsDone)
-			{
-				if (runningIfInfo.bExpectingEndRemainingLineInfo)
-				{
-					runningIfInfo.end_remaining_zone = currentCond.linePos;
-					runningIfInfo.bExpectingEndRemainingLineInfo = false;
-				}
-				else
-				{
-					// Nothing
-				}
-			}
-
-			runningIfInfo.end_replaced_zone = currentCond.linePos + 1;
-
-			printf("%s#endif at line %d\n", tabIndentStr(runningIfInfo.level), currentCond.linePos);
-
-			if (runningIfInfo.bTrueIsDone)
-			{
-				printf("%s---> Replacing zone [%d, %d[ with zone [%d, %d[\n", tabIndentStr(runningIfInfo.level),
-					runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone,
-					runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone);
-
-				strExclDirTest.replace(
-					runningIfInfo.start_replaced_zone * 2, runningIfInfo.end_replaced_zone * 2 - runningIfInfo.start_replaced_zone * 2,
-					strExclDirTest.substr(runningIfInfo.start_remaining_zone * 2, runningIfInfo.end_remaining_zone * 2 - runningIfInfo.start_remaining_zone * 2));
-
-				StrSizeT replacedLineCount = runningIfInfo.end_replaced_zone - runningIfInfo.start_replaced_zone;
-				
-				for (size_t nRemainingCond = nCond + 1; nRemainingCond < condiTestData.size(); ++nRemainingCond)
-				{
-					assert(condiTestData[nRemainingCond].linePos > runningIfInfo.start_replaced_zone);
-					condiTestData[nRemainingCond].linePos -= replacedLineCount;
-				}
-			}
-			else
-			{
-				printf("%s---> No selected zone.\n", tabIndentStr(runningIfInfo.level));
-			}
-
-			printf("\n");
-
-			ifCtx.runningIfStack.pop();
-		}
-
-			break;
-
 		default:
 			break;
 		}
 	}
 
-	std::cout << "====================================\n";
+	/*std::cout << "====================================\n";
 	std::cout << strExclDirTest;
-	std::cout << "====================================\n";
+	std::cout << "====================================\n";*/
 
 	return 0;
 }

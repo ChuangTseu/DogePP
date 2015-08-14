@@ -4,7 +4,7 @@ std::map<std::string, Macro> g_macros;
 
 bool gMacroIsUnique(const std::string& strKey)
 {
-	return g_macros.find(strKey) != g_macros.end();
+	return g_macros.find(strKey) == g_macros.end();
 }
 
 bool gMacroInsert(const std::string& strKey, Macro macro)
@@ -19,5 +19,10 @@ bool gMacroInsert(const std::string& strKey, Macro macro)
 	g_macros[strKey] = std::move(macro);
 
 	return bWasUnique;
+}
+
+bool gMacroIsDefined(const std::string& strKey)
+{
+	return g_macros.find(strKey) != g_macros.end();
 }
 

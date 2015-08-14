@@ -6,3 +6,5 @@
 #define S256(i)  S64((i)),  S64((i)+64),   S64((i)+128),  S64((i)+192)
 #define S1024(i) S256((i)), S256((i)+256), S256((i)+512), S256((i)+768)
 
+#define coutlr std::cout << '\n';
+

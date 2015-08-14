@@ -26,3 +26,14 @@ bool gMacroIsDefined(const std::string& strKey)
 	return g_macros.find(strKey) != g_macros.end();
 }
 
+const Macro& gMacroGet(const std::string& strKey)
+{
+	DOGE_DEBUG_ASSERT(gMacroIsDefined(strKey));
+	return g_macros[strKey];
+}
+
+void gMacroUndefine(const std::string& strKey)
+{
+	// Key can be unexistant
+	g_macros.erase(strKey);
+}

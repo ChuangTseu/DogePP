@@ -13,7 +13,6 @@
 	X(LEFT_PAREN	, '('	) \
 	X(RIGHT_PAREN	, ')'	) \
 	X(COMMA			, ','	) \
-	X(ASSIGN		, '='	) \
 	X(PLUS			, '+'	) \
 	X(MINUS			, '-'	) \
 	X(ASTERISK		, '*'	) \
@@ -35,6 +34,27 @@ enum ETokenType {
 	ETokenType_UNKNOWN = -1
 };
 
+inline bool IsETokenTypeOperator(ETokenType eTokenType)
+{
+	return ((eTokenType >= 0) && (eTokenType <= COLON));
+}
+
+static char LUT_ETokenType_OperatorChar[ETokenType_COUNT] =
+{
+#define X(_1, operatorChar) operatorChar,
+	X_LIST_OF_ETokenType
+#undef X
+};
+
+inline ETokenType ETokenTypeFromCharOperator(char cOp)
+{
+#define X(eEnum, operatorChar) if (cOp == operatorChar) return eEnum;
+	X_LIST_OF_ETokenType
+#undef X
+
+		return ETokenType_UNKNOWN;
+}
+
 static const char* LUT_ETokenType_szName[ETokenType_COUNT] =
 {
 #define X(eEnum, _2) #eEnum,
@@ -42,7 +62,7 @@ static const char* LUT_ETokenType_szName[ETokenType_COUNT] =
 #undef X
 };
 
-ETokenType szNameToETokenType(const char* szName)
+inline ETokenType szNameToETokenType(const char* szName)
 {
 #define X(eEnum, _2) if (szEq(szName, #eEnum)) return eEnum;
 	X_LIST_OF_ETokenType
@@ -51,7 +71,7 @@ ETokenType szNameToETokenType(const char* szName)
 		return ETokenType_UNKNOWN;
 }
 
-const char* ETokenTypeToSzName(ETokenType eTokenType)
+inline const char* ETokenTypeToSzName(ETokenType eTokenType)
 {
 	DOGE_ASSERT(eTokenType >= 0 && eTokenType < ETokenType_COUNT);
 	return LUT_ETokenType_szName[eTokenType];
@@ -78,7 +98,10 @@ struct Precedence {
 };
 
 class Expression {
+public:
+	virtual std::string GetStringExpression() const = 0;
 
+	virtual int Evaluate() const = 0;
 };
 
 class OperatorExpression : public Expression {
@@ -88,6 +111,9 @@ public:
 		m_eOperator = eOperator;
 		m_right = right;
 	}
+
+	std::string GetStringExpression() const;
+	int Evaluate() const;
 
 	const Expression* m_left;
 	ETokenType m_eOperator;
@@ -101,6 +127,9 @@ public:
 		m_args = args;
 	}
 
+	std::string GetStringExpression() const;
+	int Evaluate() const;
+
 private:
 	const Expression* m_function;
 	std::list<const Expression*> m_args;
@@ -113,6 +142,9 @@ public:
 		m_thenArm = thenArm;
 		m_elseArm = elseArm;
 	}
+
+	std::string GetStringExpression() const;
+	int Evaluate() const;
 
 private:
 	const Expression* m_condition;
@@ -128,6 +160,9 @@ public:
 
 	std::string GetName() { return m_name; }
 
+	std::string GetStringExpression() const;
+	int Evaluate() const;
+
 private:
 	std::string m_name;
 };
@@ -135,12 +170,15 @@ private:
 class PostfixExpression : public Expression {
 public:
 	PostfixExpression(const Expression* left, ETokenType eOperator) {
-		mLeft = left;
+		m_left = left;
 		m_eOperator = eOperator;
 	}
 
+	std::string GetStringExpression() const;
+	int Evaluate() const;
+
 private:
-	const Expression* mLeft;
+	const Expression* m_left;
 	ETokenType  m_eOperator;
 };
 
@@ -150,6 +188,9 @@ public:
 		m_eOperator = eOperator;
 		m_right = right;
 	}
+
+	std::string GetStringExpression() const;
+	int Evaluate() const;
 
 private:
 	ETokenType  m_eOperator;

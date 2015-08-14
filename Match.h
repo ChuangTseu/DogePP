@@ -14,13 +14,27 @@ inline bool isLiteralDelimiterChar(char c)
 	return c == '"' || c == '\'';
 }
 
-inline bool isLineReturn(const char* sz)
+inline bool isLineReturn(const char* sz, StrSizeT* pOutLRLength = NULL)
 {
-#if LR_TYPE_LF
-	return szEqN(sz, "\n", LR_LENGTH);
-#elif LR_TYPE_CRLF
-	return szEqN(sz, "\r\n", LR_LENGTH);
-#endif
+//#if LR_TYPE_LF
+//	return szEqN(sz, "\n", LR_LENGTH);
+//#elif LR_TYPE_CRLF
+//	return szEqN(sz, "\r\n", LR_LENGTH);
+//#endif
+
+	if (szEqN(sz, "\n", 1))
+	{
+		if (pOutLRLength) *pOutLRLength = 1;
+		return true;
+	}
+
+	if (szEqN(sz, "\r\n", 2))
+	{
+		if (pOutLRLength) *pOutLRLength = 2;
+		return true;
+	}
+
+	return false;
 }
 
 #define COMMENT_ML_START_LENGTH 2

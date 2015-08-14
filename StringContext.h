@@ -157,7 +157,7 @@ struct StrCTX {
 		vRegisteredSubLocs.push_back(&subLoc);
 	}
 
-	void UnregisterLivePatchableCtxSubLoc(SubStrLoc& subLoc)
+	void UnregisterLivePatchableCtxSubLoc(const SubStrLoc& subLoc)
 	{
 		vRegisteredSubLocs.erase(std::find(vRegisteredSubLocs.begin(), vRegisteredSubLocs.end(), &subLoc));
 	}

@@ -31,6 +31,7 @@
 #define X_LIST_OF_Directive \
 	X(include) \
 	X(define) \
+	X(undef) \
 	X(pragma) \
 	X(ifdef) \
 	X(ifndef) \
@@ -105,7 +106,8 @@ bool skipEntireMultiLineComment(StrCTX& ctx)
 
 bool skipEntireLine(StrCTX& ctx)
 {
-	while (!ctx.IsEnded() && !isLineReturn(ctx.HeadCStr()))
+	StrSizeT lastLRLength;
+	while (!ctx.IsEnded() && !isLineReturn(ctx.HeadCStr(), &lastLRLength))
 	{
 		*(*(std::string::iterator*)&ctx.head) = '-';
 		ctx.Advance(1);
@@ -116,7 +118,7 @@ bool skipEntireLine(StrCTX& ctx)
 		return false; // No EOL found
 	}
 
-	ctx.Advance(LR_LENGTH);
+	ctx.Advance(lastLRLength);
 
 	return true;
 }
@@ -220,9 +222,10 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 		return skipCtxHeadToNextValid(ctx);
 	}
 
-	if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1)) // Skip line break
+	StrSizeT lastLRLength;
+	if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1, &lastLRLength)) // Skip line break
 	{
-		ctx.Erase({ ctx.CurrentPos(), ctx.CurrentPos() + 1 + LR_LENGTH }, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+		ctx.Erase({ ctx.CurrentPos(), ctx.CurrentPos() + 1 + lastLRLength }, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
 		//ctx.Advance(1 + LR_LENGTH);
 		return skipCtxHeadToNextValid(ctx);
 	}
@@ -406,12 +409,13 @@ bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent)
 
 	while (!ctx.IsEnded() && !isLineReturn(ctx.HeadCStr()))
 	{
-		if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1)) // Skip line break
+		StrSizeT lastLRLength;
+		if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1, &lastLRLength)) // Skip line break
 		{
 			itMultiLineContentPartEnd = ctx.head - 1;
 			strMultiLineContent.append(itMultiLineContentPartStart, itMultiLineContentPartEnd);
 
-			ctx.Advance(1 + LR_LENGTH);
+			ctx.Advance(1 + lastLRLength);
 			itMultiLineContentPartStart = ctx.head;
 		}
 		else
@@ -708,6 +712,31 @@ bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 	}
 }
 
+bool handleDirectiveContent_Undef(StrCTX& ctx, StrSizeT directiveStartPos)
+{
+	if (!isHSpace(pickNextChar(ctx)))
+	{
+		return false;
+	}
+
+	skipHSpaces(ctx);
+
+	std::string strUndefine;
+	if (!retrieveIdentifier(ctx, strUndefine))
+	{
+		return false;
+	}
+
+	if (!skipEntireLine(ctx))
+	{
+		return false;
+	}
+
+	gMacroUndefine(strUndefine);
+
+	return true;
+}
+
 bool handleDirectiveContent_Pragma(StrCTX& ctx, StrSizeT directiveStartPos)
 {
 	skipHSpaces(ctx);
@@ -957,6 +986,8 @@ bool handleDirectiveContent(StrCTX& ctx, EDirective eDirective, StrSizeT directi
 		return handleDirectiveContent_Include(ctx, directiveStartPos);
 	case e_directive_define:
 		return handleDirectiveContent_Define(ctx, directiveStartPos);
+	case e_directive_undef:
+		return handleDirectiveContent_Undef(ctx, directiveStartPos);
 	case e_directive_pragma:
 		return handleDirectiveContent_Pragma(ctx, directiveStartPos);
 	case e_directive_if:
@@ -978,13 +1009,14 @@ bool handleDirectiveContent(StrCTX& ctx, EDirective eDirective, StrSizeT directi
 	return true;
 }
 
+std::vector<std::string> g_encounteredIdentifiers;
+
 void preprocess_string(std::string& strBuffer)
 {
 	StrCTX ctx{ strBuffer, strBuffer.cbegin() };
 
 	while (!ctx.IsEnded())
 	{
-		//DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
 		char c = pickNextChar(ctx);
 		if (c == ' ')
 		{
@@ -1029,6 +1061,41 @@ void preprocess_string(std::string& strBuffer)
 			ctx.Advance(1);
 			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d char %d col %d. Invalid literal termination.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
 		}
+		else if (LUT_validIdFirstChar[c])
+		{
+			std::string strId;
+			SubStrLoc idSubLoc;
+			idSubLoc.m_start = ctx.CurrentPos();
+			DOGE_ASSERT_MESSAGE(retrieveIdentifier(ctx, strId), "Error at line %d char %d col %d. Could not retrieve identifier.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			g_encounteredIdentifiers.push_back(strId);
+			idSubLoc.m_end = ctx.CurrentPos();
+
+			if (gMacroIsDefined(strId))
+			{
+				const Macro& macro = gMacroGet(strId);
+
+				if (macro.m_eType == e_macrotype_definition) // Todo : support functions macro
+				{
+					ctx.SetHead(idSubLoc.m_start);
+					ctx.Replace(idSubLoc, macro.m_strContent, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+				}
+				else
+				{
+					std::string strMacroArgs;
+					DOGE_ASSERT(getCharEnclosedString(ctx, '(', ')', strMacroArgs));
+					std::vector<std::string> vStrArgs;
+					decomposeStringCleanHSpaces(strMacroArgs, ',', vStrArgs);
+
+					std::string strFnMacroPatchedContent;
+					macro.PatchString(vStrArgs, strFnMacroPatchedContent);
+
+					idSubLoc.m_end = ctx.CurrentPos();
+
+					ctx.SetHead(idSubLoc.m_start);
+					ctx.Replace(idSubLoc, strFnMacroPatchedContent, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+				}
+			}
+		}
 		else
 		{
 			ctx.Advance(1);
@@ -1071,8 +1138,54 @@ std::vector<CondiTestInfo> condiTestData {
 	{ e_directive_endif, 33, {} },
 };
 
+#include "ExpParser.h"
+
+void BuildTokenVector(const std::vector<std::string>& vFromStrings, std::vector<Token>& vToTokens)
+{
+	vToTokens.clear();
+
+	for (const std::string& str : vFromStrings)
+	{
+		if (str.empty())
+		{
+			vToTokens.push_back({ EOL, "" });
+		}
+		else if (str.size() == 1)
+		{
+			ETokenType eOperator = ETokenTypeFromCharOperator(str.front());
+			if (eOperator != ETokenType_UNKNOWN)
+				vToTokens.push_back({ eOperator, "" });
+			else
+				vToTokens.push_back({ NAME, str });
+		}
+		else
+		{
+			vToTokens.push_back({ NAME, str });
+		}
+	}
+
+	vToTokens.push_back({ EOL, "" });
+}
+
 int main(int argc, char* argv[])
 {
+	//std::vector<std::string> vStringTokens{
+	//	"(", "-", "1", "+", "20", ")", ""
+	//};
+
+	//std::vector<Token> vTokens;
+
+	//BuildTokenVector(vStringTokens, vTokens);
+
+	//ExpParser expParser(vTokens.cbegin());
+
+	//const Expression* result = expParser.ParseExpression();
+
+	//std::cout << result->GetStringExpression() << '\n';
+	//std::cout << result->Evaluate() << '\n';
+
+	//return 0;
+
 	std::string strFile;
 	DOGE_ASSERT(readFileToString("testfile.txt", strFile));
 	preprocess_string(strFile);
@@ -1085,8 +1198,17 @@ int main(int argc, char* argv[])
 
 	for (const auto& globalMacro : g_macros)
 	{
-		std::cout << "\t-" << globalMacro.second.m_name << '\n';
+		std::cout << "\t- " << globalMacro.second.m_name << '\n';
 	}
+
+	coutlr;
+
+	for (const auto& globalStrId : g_encounteredIdentifiers)
+	{
+		//std::cout << "\t~ " << globalStrId << '\n';
+	}
+
+	coutlr;
 
 	return 0;
 

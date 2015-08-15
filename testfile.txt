@@ -113,7 +113,7 @@ int valid;
 
 
 	const uchar LUT_uchar_numbers[] = {
-		#define S1(i) i,
+		#define S1(i) i
 			S4(0)
 		#undef S1
 	}
@@ -123,6 +123,12 @@ int valid;
 			S4(0)
 		#undef S1
 	}
+
+	#if (10 > 9) && ((2 + 4) /* haha */ == \
+	 6 && (18 * 10 =\
+= 180))
+		char Valid_Expression = !!true;
+	#endif
 }
 
 

@@ -9,72 +9,163 @@
 #include "EnumCTTI.h"
 #include "StringUtils.h"
 
-#define X_LIST_OF_ETokenType \
-	X(LEFT_PAREN	, '('	) \
-	X(RIGHT_PAREN	, ')'	) \
-	X(COMMA			, ','	) \
-	X(PLUS			, '+'	) \
-	X(MINUS			, '-'	) \
-	X(ASTERISK		, '*'	) \
-	X(SLASH			, '/'	) \
-	X(CARET			, '^'	) \
-	X(TILDE			, '~'	) \
-	X(BANG			, '!'	) \
-	X(QUESTION		, '?'	) \
-	X(COLON			, ':'	) \
-	X(NAME			, '\0'	) \
-	X(EOL			, '\0'	)
+#define X_LIST_OF_SingleChar_ETokenType \
+	X2(LEFT_PAREN	, "("	) \
+	X2(RIGHT_PAREN	, ")"	) \
+	X2(PLUS			, "+"	) \
+	X2(MINUS		, "-"	) \
+	X2(MUL			, "*"	) \
+	X2(DIV			, "/"	) \
+	X2(MOD			, "%"	) \
+	X2(BIT_NOT		, "~"	) \
+	X2(BIT_AND		, "&"	) \
+	X2(BIT_OR		, "|"	) \
+	X2(BIT_XOR		, "^"	) \
+	X2(NOT			, "!"	) \
+	X2(GT			, ">"	) \
+	X2(LT			, "<"	) \
+	X2(QUESTION		, "?"	) \
+	X2(COLON		, ":"	)
 
-enum ETokenType {
-#define X(eEnum, _2) eEnum,
-	X_LIST_OF_ETokenType
-#undef X
+#define X_LIST_OF_DoubleChar_ETokenType \
+	X2(NEQ			, "!="	) \
+	X2(EQ			, "=="	) \
+	X2(GE			, ">="	) \
+	X2(LE			, "<="	) \
+	X2(AND			, "&&"	) \
+	X2(OR			, "||"	) \
+	X2(BIT_LSHIFT	, "<<"	) \
+	X2(BIT_RSHIFT	, ">>"	)
 
-	ETokenType_COUNT,
-	ETokenType_UNKNOWN = -1
+#define X_LIST_OF_OtherType_ETokenType \
+	X2(NUMBER		, ""	) \
+	X2(EOL			, ""	)
+
+enum class ETokenType {
+
+#define X2(eEnum, _2) eEnum,
+	X_LIST_OF_SingleChar_ETokenType
+#undef X2
+
+	SINGLE_CHAR_END,
+
+#define X2(eEnum, _2) eEnum,
+	X_LIST_OF_DoubleChar_ETokenType
+#undef X2
+
+	DOUBLE_CHAR_END,
+
+#define X2(eEnum, _2) eEnum,
+	X_LIST_OF_OtherType_ETokenType
+#undef X2
+
+	OTHER_TYPE_END,
+
+	TOTAL_END,
+
+	SINGLE_CHAR_START = 0,
+	SINGLE_CHAR_COUNT = SINGLE_CHAR_END - SINGLE_CHAR_START,
+
+	DOUBLE_CHAR_START = SINGLE_CHAR_END + 1,
+	DOUBLE_CHAR_COUNT = DOUBLE_CHAR_END - DOUBLE_CHAR_START,
+
+	OTHER_TYPE_START = DOUBLE_CHAR_END + 1,
+	OTHER_TYPE_COUNT = OTHER_TYPE_END - OTHER_TYPE_START,
+
+	TOTAL_COUNT = SINGLE_CHAR_COUNT + DOUBLE_CHAR_COUNT + OTHER_TYPE_COUNT,
+
+	UNKNOWN = -1
 };
 
-inline bool IsETokenTypeOperator(ETokenType eTokenType)
-{
-	return ((eTokenType >= 0) && (eTokenType <= COLON));
-}
+#define EASINT(eEnum) (static_cast<int>(eEnum))
 
-static char LUT_ETokenType_OperatorChar[ETokenType_COUNT] =
+static const char* LUT_ETokenType_OperatorChar[EASINT(ETokenType::TOTAL_END)] =
 {
-#define X(_1, operatorChar) operatorChar,
-	X_LIST_OF_ETokenType
-#undef X
+#define X2(_1, operatorSz) operatorSz,
+	X_LIST_OF_SingleChar_ETokenType
+#undef X2
+
+	"",
+
+#define X2(_1, operatorSz) operatorSz,
+	X_LIST_OF_DoubleChar_ETokenType
+#undef X2
+
+	"",
+
+#define X2(_1, operatorSz) operatorSz,
+	X_LIST_OF_OtherType_ETokenType
+#undef X2
+
+	""
 };
 
-inline ETokenType ETokenTypeFromCharOperator(char cOp)
+inline ETokenType ETokenTypeFromSingleCharOperator(const char* szOp)
 {
-#define X(eEnum, operatorChar) if (cOp == operatorChar) return eEnum;
-	X_LIST_OF_ETokenType
-#undef X
+#define X2(eEnum, operatorSz) if (szEq(szOp, operatorSz)) return ETokenType::eEnum;
+		X_LIST_OF_SingleChar_ETokenType
+#undef X2
 
-		return ETokenType_UNKNOWN;
+		return ETokenType::UNKNOWN;
 }
 
-static const char* LUT_ETokenType_szName[ETokenType_COUNT] =
+inline ETokenType ETokenTypeFromDoubleCharOperator(const char* szOp)
 {
-#define X(eEnum, _2) #eEnum,
-	X_LIST_OF_ETokenType
-#undef X
+#define X2(eEnum, operatorSz) if (szEq(szOp, operatorSz)) return ETokenType::eEnum;
+		X_LIST_OF_DoubleChar_ETokenType
+#undef X2
+
+		return ETokenType::UNKNOWN;
+}
+
+static const char* LUT_ETokenType_szName[EASINT(ETokenType::TOTAL_END)] =
+{
+#define X2(eEnum, _2) #eEnum,
+	X_LIST_OF_SingleChar_ETokenType
+#undef X2
+
+	"SINGLE_CHAR_END",
+
+#define X2(eEnum, _2) #eEnum,
+	X_LIST_OF_DoubleChar_ETokenType
+#undef X2
+
+	"DOUBLE_CHAR_END",
+
+#define X2(eEnum, _2) #eEnum,
+	X_LIST_OF_OtherType_ETokenType
+#undef X2
+
+	"OTHER_TYPE_END"
 };
 
 inline ETokenType szNameToETokenType(const char* szName)
 {
-#define X(eEnum, _2) if (szEq(szName, #eEnum)) return eEnum;
-	X_LIST_OF_ETokenType
-#undef X
+#define X2(eEnum, _2) if (szEq(szName, #eEnum)) return ETokenType::eEnum;
+	X_LIST_OF_SingleChar_ETokenType
+#undef X2
 
-		return ETokenType_UNKNOWN;
+	if (szEq(szName, "SINGLE_CHAR_END")) return ETokenType::SINGLE_CHAR_END;
+
+#define X2(eEnum, _2) if (szEq(szName, #eEnum)) return ETokenType::eEnum;
+			X_LIST_OF_DoubleChar_ETokenType
+#undef X2
+
+	if (szEq(szName, "DOUBLE_CHAR_END")) return ETokenType::DOUBLE_CHAR_END;
+
+#define X2(eEnum, _2) if (szEq(szName, #eEnum)) return ETokenType::eEnum;
+				X_LIST_OF_OtherType_ETokenType
+#undef X2
+
+	if (szEq(szName, "OTHER_TYPE_END")) return ETokenType::OTHER_TYPE_END;
+
+	return ETokenType::UNKNOWN;
 }
 
 inline const char* ETokenTypeToSzName(ETokenType eTokenType)
 {
-	DOGE_ASSERT(eTokenType >= 0 && eTokenType < ETokenType_COUNT);
-	return LUT_ETokenType_szName[eTokenType];
+	DOGE_ASSERT(EASINT(eTokenType) >= 0 && EASINT(eTokenType) < EASINT(ETokenType::SINGLE_CHAR_COUNT));
+	return LUT_ETokenType_szName[EASINT(eTokenType)];
 }
 
 DECLARE_ENUM_TEMPLATE_CTTI(ETokenType)
@@ -152,9 +243,9 @@ private:
 	const Expression* m_elseArm;
 };
 
-class NameExpression : public Expression {
+class NumberExpression : public Expression {
 public:
-	NameExpression(const std::string& name) {
+	NumberExpression(const std::string& name) {
 		m_name = name;
 	}
 
@@ -269,40 +360,19 @@ private:
 	bool m_bIsRight;
 };
 
-class CallParselet : public InfixParselet {
-public:
-	const Expression* Parse(Parser& parser, const Expression* left, const Token& token) const {
-		// Parse the comma-separated arguments until we hit, ")".
-		std::list<const Expression*> args;
-
-		// There may be no arguments at all.
-		if (!parser.Match(RIGHT_PAREN)) {
-			do {
-				args.push_back(parser.ParseExpression());
-			} while (parser.Match(COMMA));
-			parser.ConsumeExpected(RIGHT_PAREN);
-		}
-
-		return new CallExpression(left, args);
-	}
-
-	int GetPrecedence() const {
-		return Precedence::CALL;
-	}
-};
-
 class ConditionalParselet : public InfixParselet {
 public:
 	const Expression* Parse(Parser& parser, const Expression* left, const Token& token) const {
 		const Expression* thenArm = parser.ParseExpression();
-		parser.ConsumeExpected(COLON);
+		parser.ConsumeExpected(ETokenType::COLON);
 		const Expression* elseArm = parser.ParseExpression(Precedence::CONDITIONAL - 1);
 
 		return new ConditionalExpression(left, thenArm, elseArm);
 	}
 
 	int GetPrecedence() const {
-		return Precedence::CONDITIONAL;
+		// Value from https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B
+		return 15;
 	}
 };
 
@@ -310,15 +380,15 @@ class GroupParselet : public PrefixParselet {
 public:
 	const Expression* Parse(Parser& parser, const Token& token) const {
 		const Expression* expression = parser.ParseExpression();
-		parser.ConsumeExpected(RIGHT_PAREN);
+		parser.ConsumeExpected(ETokenType::RIGHT_PAREN);
 		return expression;
 	}
 };
 
-class NameParselet : public PrefixParselet {
+class NumberParselet : public PrefixParselet {
 public:
 	const Expression* Parse(Parser& parser, const Token& token) const {
-		return new NameExpression(token.m_text);
+		return new NumberExpression(token.m_text);
 	}
 };
 

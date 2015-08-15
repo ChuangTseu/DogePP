@@ -301,12 +301,12 @@ bool getNextIdentifierLocation(StrCTX& ctx, SubStrLoc& outLocation, bool& isEOS)
 {
 	isEOS = false;
 
-	while (!ctx.ItIsEnd(ctx.head) && !LUT_validIdFirstChar[*ctx.head])
+	while (!ctx.IsEnded() && !LUT_validIdFirstChar[ctx.HeadChar()])
 	{
-		++ctx.head;
+		ctx.Advance(1);
 	}
 
-	if (ctx.ItIsEnd(ctx.head))
+	if (ctx.IsEnded())
 	{
 		isEOS = true;
 		return true; // Not exactly an error, just EOS
@@ -317,19 +317,16 @@ bool getNextIdentifierLocation(StrCTX& ctx, SubStrLoc& outLocation, bool& isEOS)
 		return false; // Found identifier with start not correctly separated
 	}
 
-	StrCItT itStart = ctx.head;
-	StrCItT itEnd;
+	StrSizeT idStartPos = ctx.CurrentPos();
 
-	++ctx.head;
-	while (LUT_validIdBodyChar[*ctx.head])
+	ctx.Advance(1);
+	while (!ctx.IsEnded() && LUT_validIdBodyChar[ctx.HeadChar()])
 	{
-		++ctx.head;
+		ctx.Advance(1);
 	}
 
-	itEnd = ctx.head;
-
-	outLocation.m_start = ctx.ItPos(itStart);
-	outLocation.m_end = ctx.ItPos(itEnd);
+	outLocation.m_start = idStartPos;
+	outLocation.m_end = ctx.CurrentPos();
 
 	return true;
 }
@@ -788,28 +785,13 @@ bool handleDirectiveContent_Ifdef(StrCTX& ctx, StrSizeT directiveStartPos)
 		return false; // Garbage after tested #ifdef identifier
 	}
 
-	bool bSkipToNextDirective = (bYieldedValue == false);
-
-	RunningIfInfo runningIfInfo;
-	runningIfInfo.bElseIsDone = false;
-	runningIfInfo.bTrueIsDone = bYieldedValue;
-	runningIfInfo.start_replaced_zone = directiveStartPos;
-	
-	runningIfInfo.level = g_ifCtx.runningIfStack.size();
-	
-	printf("%s#ifdef at pos %d yields %s\n", tabIndentStr(runningIfInfo.level), 
+	printf("%s#ifdef at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
 		directiveStartPos, bYieldedValue ? "'true'" : "'false'");
-	
-	if (bYieldedValue)
-	{
-		runningIfInfo.start_remaining_zone = ctx.CurrentPos();
-		runningIfInfo.bExpectingEndRemainingLineInfo = true;
-	}
-	
-	g_ifCtx.RegisterTopRunningInfoSubLocsIfAny(ctx);
-	g_ifCtx.runningIfStack.push(runningIfInfo);
 
-	if (bSkipToNextDirective)
+	bool bMustSkip;
+	g_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+	
+	if (bMustSkip)
 	{
 		return advanceToNextConditionDirective(ctx);
 	}
@@ -839,28 +821,13 @@ bool handleDirectiveContent_Ifndef(StrCTX& ctx, StrSizeT directiveStartPos)
 		return false; // Garbage after tested #ifdef identifier
 	}
 
-	bool bSkipToNextDirective = (bYieldedValue == false);
-
-	RunningIfInfo runningIfInfo;
-	runningIfInfo.bElseIsDone = false;
-	runningIfInfo.bTrueIsDone = bYieldedValue;
-	runningIfInfo.start_replaced_zone = directiveStartPos;
-
-	runningIfInfo.level = g_ifCtx.runningIfStack.size();
-
-	printf("%s#ifndef at pos %d yields %s\n", tabIndentStr(runningIfInfo.level),
+	printf("%s#ifndef at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
 		directiveStartPos, bYieldedValue ? "'true'" : "'false'");
 
-	if (bYieldedValue)
-	{
-		runningIfInfo.start_remaining_zone = ctx.CurrentPos();
-		runningIfInfo.bExpectingEndRemainingLineInfo = true;
-	}
+	bool bMustSkip;
+	g_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
-	g_ifCtx.RegisterTopRunningInfoSubLocsIfAny(ctx);
-	g_ifCtx.runningIfStack.push(runningIfInfo);
-
-	if (bSkipToNextDirective)
+	if (bMustSkip)
 	{
 		return advanceToNextConditionDirective(ctx);
 	}
@@ -876,46 +843,15 @@ bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Else(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	DOGE_ASSERT_MESSAGE(g_ifCtx.runningIfStack.size() > 0, "Unexpected #else : no opening clause before\n");
-
 	if (!advanceToNextLineExpectHSpaceOnly(ctx))
 	{
 		return false; // Garbage after #else
 	}
 
-	RunningIfInfo& runningIfInfo = g_ifCtx.runningIfStack.top();
+	bool bMustSkip;
+	g_ifCtx.UpdateElse(ctx, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
-	DOGE_ASSERT_MESSAGE(!runningIfInfo.bElseIsDone, "Unexpected #else : #else for this clause has already been processed\n");
-
-	bool bSkipToNextDirective = runningIfInfo.bTrueIsDone;
-
-	runningIfInfo.bElseIsDone = true;
-
-	if (runningIfInfo.bTrueIsDone)
-	{
-		printf("%s#else at pos %d yields %s\n", tabIndentStr(runningIfInfo.level), directiveStartPos, "'whatever'");
-
-		if (runningIfInfo.bExpectingEndRemainingLineInfo)
-		{
-			runningIfInfo.end_remaining_zone = directiveStartPos;
-			runningIfInfo.bExpectingEndRemainingLineInfo = false;
-		}
-		else
-		{
-			// Nothing
-		}
-	}
-	else
-	{
-		runningIfInfo.bTrueIsDone = true; // Mandatory if else is reached while not true_is_set
-
-		printf("%s#else at pos %d triggers mandatory %s\n", tabIndentStr(runningIfInfo.level), directiveStartPos, "'true'");
-
-		runningIfInfo.start_remaining_zone = ctx.CurrentPos();
-		runningIfInfo.bExpectingEndRemainingLineInfo = true;
-	}
-
-	if (bSkipToNextDirective)
+	if (bMustSkip)
 	{
 		return advanceToNextConditionDirective(ctx);
 	}
@@ -927,53 +863,16 @@ bool handleDirectiveContent_Endif(StrCTX& ctx, StrSizeT directiveStartPos)
 {
 	if (!advanceToNextLineExpectHSpaceOnly(ctx))
 	{
-		return false; // Garbage after #endif
+		return false; // Garbage after #else
 	}
 
-	DOGE_ASSERT_MESSAGE(g_ifCtx.runningIfStack.size() > 0, "Unexpected #endif : no opening clause before\n");
+	bool bMustSkip;
+	g_ifCtx.UpdateEndif(ctx, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
-	RunningIfInfo& runningIfInfo = g_ifCtx.runningIfStack.top();
-
-	if (runningIfInfo.bTrueIsDone)
+	if (bMustSkip)
 	{
-		if (runningIfInfo.bExpectingEndRemainingLineInfo)
-		{
-			runningIfInfo.end_remaining_zone = directiveStartPos;
-			runningIfInfo.bExpectingEndRemainingLineInfo = false;
-		}
-		else
-		{
-			// Nothing
-		}
+		return advanceToNextConditionDirective(ctx);
 	}
-
-	runningIfInfo.end_replaced_zone = ctx.CurrentPos();
-
-	printf("%s#endif at pos %d\n", tabIndentStr(runningIfInfo.level), directiveStartPos);
-
-	if (runningIfInfo.bTrueIsDone)
-	{
-		printf("%s---> Replacing zone [%d, %d[ with zone [%d, %d[\n", tabIndentStr(runningIfInfo.level),
-			runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone,
-			runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone);
-
-		SubStrLoc replacedSubLoc{ runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone };
-		SubStrLoc fillingdSubLoc{ runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone };
-		ctx.Replace(replacedSubLoc, fillingdSubLoc, StrCTX::e_insidereplacedzonebehaviour_ASSERT);
-	}
-	else
-	{
-		printf("%s---> No selected zone.\n", tabIndentStr(runningIfInfo.level));
-
-		SubStrLoc erasedSubLoc{ runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone };
-		//ctx.Replace(replacedSubLoc, std::string{}, StrCTX::e_insidereplacedzonebehaviour_ASSERT);
-		ctx.Erase(erasedSubLoc, StrCTX::e_insidereplacedzonebehaviour_ASSERT);
-	}
-
-	printf("\n");
-
-	g_ifCtx.runningIfStack.pop();
-	g_ifCtx.UnregisterTopRunningInfoSubLocsIfAny(ctx);
 
 	return true;
 }
@@ -1140,51 +1039,140 @@ std::vector<CondiTestInfo> condiTestData {
 
 #include "ExpParser.h"
 
-void BuildTokenVector(const std::vector<std::string>& vFromStrings, std::vector<Token>& vToTokens)
-{
-	vToTokens.clear();
+static char IndirectLUT_CharAsCStr[256 * 2];
+int Init_CharAsCStr_Data() {
+	for (int i = 0; i < 256; ++i)
+		IndirectLUT_CharAsCStr[i << 1] = static_cast<char>(i);
 
-	for (const std::string& str : vFromStrings)
+	return 0;
+}
+
+const char* CharAsCStr(char c)
+{
+	static int dummyStaticInit = Init_CharAsCStr_Data();
+
+	return &IndirectLUT_CharAsCStr[static_cast<int>(c) << 1];
+}
+
+void TestEvaluationStringExpression(std::string strExp)
+{
+	StrCTX expStrCtx(strExp);
+
+	const char* opSymbols = "?:^~%/*()!&|+-><" ">=" "<=" "&&" "||" "==" "!=" "<<" ">>";
+
+	const char singleOnlyCharSymbol[] = "?:^~%*/()";
+
+	const char doubleMaybeCharSymbol[] = "!&|+-><=";
+
+	const char doubleOnlyCharSecondSymbol[] = "=&|<>";
+
+	std::vector<Token> vParsedTokens;
+
+	while (!expStrCtx.IsEnded())
 	{
-		if (str.empty())
+		char c = pickNextChar(expStrCtx);
+
+		if (isHSpace(c))
 		{
-			vToTokens.push_back({ EOL, "" });
+			expStrCtx.AdvanceHead();
 		}
-		else if (str.size() == 1)
+		else if (isDigit(c))
 		{
-			ETokenType eOperator = ETokenTypeFromCharOperator(str.front());
-			if (eOperator != ETokenType_UNKNOWN)
-				vToTokens.push_back({ eOperator, "" });
+			StrSizeT numberStartPos = expStrCtx.CurrentPos();
+			expStrCtx.AdvanceHead();
+			while (!expStrCtx.IsEnded() && isValidInNumberChar(pickNextChar(expStrCtx)))
+			{
+				expStrCtx.AdvanceHead();
+			}
+			StrSizeT numberEndPos = expStrCtx.CurrentPos();
+			StrSizeT suffixStartPos = expStrCtx.CurrentPos();
+			while (!expStrCtx.IsEnded() && LUT_validIdBodyChar[pickNextChar(expStrCtx)])
+			{
+				expStrCtx.AdvanceHead();
+			}
+			StrSizeT suffixEndPos = expStrCtx.CurrentPos();
+
+			SubStrLoc fullNumberSubLoc{ numberStartPos, suffixEndPos };
+
+			int number;
+			expStrCtx.ExecWithTmpSzSubCStr(fullNumberSubLoc, [&](const char* sz) {
+				number = atoi(sz);
+			});
+
+			Token numberToken{ ETokenType::NUMBER, fullNumberSubLoc.ExtractSubStr(expStrCtx.baseStr) };
+			vParsedTokens.push_back(numberToken);
+		}
+		else if (std::find(std::begin(singleOnlyCharSymbol), std::end(singleOnlyCharSymbol), c))
+		{
+			ETokenType eOperator = ETokenTypeFromSingleCharOperator(CharAsCStr(c));
+			DOGE_ASSERT(eOperator != ETokenType::UNKNOWN);
+
+			vParsedTokens.push_back({ eOperator, "" });
+
+			expStrCtx.AdvanceHead();
+		}
+		else if (std::find(std::begin(doubleMaybeCharSymbol), std::end(doubleMaybeCharSymbol), c))
+		{
+			StrSizeT doubleCharOpStartPos = expStrCtx.CurrentPos();
+
+			expStrCtx.AdvanceHead();
+
+			// Handcrafted one symbol "lookahead" for those modest needs
+			if (!expStrCtx.IsEnded() &&
+				std::find(std::begin(doubleOnlyCharSecondSymbol), std::end(doubleOnlyCharSecondSymbol), (c = pickNextChar(expStrCtx))))
+			{
+				StrSizeT doubleEndOpStartPos = expStrCtx.CurrentPos() + 1;
+				SubStrLoc doubleCharOpSubLoc{ doubleCharOpStartPos, doubleEndOpStartPos };
+
+				ETokenType eOperator;
+				expStrCtx.ExecWithTmpSzSubCStr(doubleCharOpSubLoc, [&](const char* sz) {
+					eOperator = ETokenTypeFromDoubleCharOperator(sz);
+				});
+				DOGE_ASSERT(eOperator != ETokenType::UNKNOWN);
+
+				vParsedTokens.push_back({ eOperator, "" });
+
+				expStrCtx.AdvanceHead();
+			}
 			else
-				vToTokens.push_back({ NAME, str });
+			{
+				ETokenType eOperator = ETokenTypeFromSingleCharOperator(CharAsCStr(c));
+				DOGE_ASSERT(eOperator != ETokenType::UNKNOWN);
+
+				vParsedTokens.push_back({ eOperator, "" });
+			}
 		}
 		else
 		{
-			vToTokens.push_back({ NAME, str });
+			DOGE_ASSERT_ALWAYS_MESSAGE("Unsupported expression character '%c'.\n", c);
 		}
 	}
 
-	vToTokens.push_back({ EOL, "" });
+	vParsedTokens.push_back({ ETokenType::EOL, "" });
+
+	ExpParser expParser(vParsedTokens.cbegin());
+	const Expression* result = expParser.ParseExpression();
+
+	std::cout << result->GetStringExpression() << '\n';
+	std::cout << result->Evaluate() << '\n';
 }
 
 int main(int argc, char* argv[])
 {
-	//std::vector<std::string> vStringTokens{
-	//	"(", "-", "1", "+", "20", ")", ""
-	//};
+	//std::string testExpressionString = "(-1+20)*1?10:3*4";
+	std::string testExpressionString = "3 < 3";
+
+	TestEvaluationStringExpression(testExpressionString);
 
 	//std::vector<Token> vTokens;
-
 	//BuildTokenVector(vStringTokens, vTokens);
-
 	//ExpParser expParser(vTokens.cbegin());
-
 	//const Expression* result = expParser.ParseExpression();
 
 	//std::cout << result->GetStringExpression() << '\n';
 	//std::cout << result->Evaluate() << '\n';
 
-	//return 0;
+	return 0;
 
 	std::string strFile;
 	DOGE_ASSERT(readFileToString("testfile.txt", strFile));

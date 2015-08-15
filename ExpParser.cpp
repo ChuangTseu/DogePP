@@ -88,25 +88,46 @@ int Parser::GetPrecedence()
 
 ExpParser::ExpParser(TokenCIt tokenIt) : Parser(tokenIt)
 {
-	Register(NAME, new NameParselet());
-	Register(QUESTION, new ConditionalParselet());
-	Register(LEFT_PAREN, new GroupParselet());
-	Register(LEFT_PAREN, new CallParselet());
+	Register(ETokenType::NUMBER, new NumberParselet());
+	Register(ETokenType::QUESTION, new ConditionalParselet());
+	Register(ETokenType::LEFT_PAREN, new GroupParselet());
 
 	// Register the simple operator parselets.
-	Prefix(PLUS, Precedence::PREFIX);
-	Prefix(MINUS, Precedence::PREFIX);
-	Prefix(TILDE, Precedence::PREFIX);
-	Prefix(BANG, Precedence::PREFIX);
 
-	// For kicks, we'll make "!" both prefix and postfix, kind of like ++.
-	Postfix(BANG, Precedence::POSTFIX);
+	// Precedence values from https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B
 
-	InfixLeft(PLUS, Precedence::SUM);
-	InfixLeft(MINUS, Precedence::SUM);
-	InfixLeft(ASTERISK, Precedence::PRODUCT);
-	InfixLeft(SLASH, Precedence::PRODUCT);
-	InfixLeft(CARET, Precedence::EXPONENT);
+	Prefix(ETokenType::PLUS, 3);
+	Prefix(ETokenType::MINUS, 3);
+	Prefix(ETokenType::BIT_NOT, 3);
+	Prefix(ETokenType::NOT, 3);
+
+	InfixLeft(ETokenType::MUL, 5);
+	InfixLeft(ETokenType::DIV, 5);
+	InfixLeft(ETokenType::MOD, 5);
+
+	InfixLeft(ETokenType::PLUS, 6);
+	InfixLeft(ETokenType::MINUS, 6);
+
+	InfixLeft(ETokenType::BIT_LSHIFT, 7);
+	InfixLeft(ETokenType::BIT_RSHIFT, 7);
+
+	InfixLeft(ETokenType::LT, 8);
+	InfixLeft(ETokenType::LE, 8);
+	InfixLeft(ETokenType::GT, 8);
+	InfixLeft(ETokenType::GE, 8);
+
+	InfixLeft(ETokenType::EQ, 9);
+	InfixLeft(ETokenType::NEQ, 9);
+
+	InfixLeft(ETokenType::BIT_AND, 10);
+
+	InfixLeft(ETokenType::BIT_XOR, 11);
+
+	InfixLeft(ETokenType::BIT_OR, 12);
+
+	InfixLeft(ETokenType::AND, 13);
+
+	InfixLeft(ETokenType::OR, 14);
 }
 
 ExpParser::~ExpParser()
@@ -137,7 +158,7 @@ static std::string strSpace = " ";
 
 std::string OperatorExpression::GetStringExpression() const
 {
-	return m_left->GetStringExpression() + " " + LUT_ETokenType_OperatorChar[m_eOperator] + " " + m_right->GetStringExpression();
+	return m_left->GetStringExpression() + " " + LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + " " + m_right->GetStringExpression();
 }
 
 std::string CallExpression::GetStringExpression() const
@@ -160,19 +181,19 @@ std::string ConditionalExpression::GetStringExpression() const
 	return m_condition->GetStringExpression() + " ? " + m_thenArm->GetStringExpression() + " : " + m_elseArm->GetStringExpression();
 }
 
-std::string NameExpression::GetStringExpression() const
+std::string NumberExpression::GetStringExpression() const
 {
 	return m_name;
 }
 
 std::string PostfixExpression::GetStringExpression() const
 {
-	return m_left->GetStringExpression() + LUT_ETokenType_OperatorChar[m_eOperator];
+	return m_left->GetStringExpression() + LUT_ETokenType_OperatorChar[EASINT(m_eOperator)];
 }
 
 std::string PrefixExpression::GetStringExpression() const
 {
-	return LUT_ETokenType_OperatorChar[m_eOperator] + m_right->GetStringExpression();
+	return LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + m_right->GetStringExpression();
 }
 
 template <class K, class T>
@@ -217,11 +238,26 @@ int dogeBinaryFn_binary_lshift(int a, int b) { return a << b; }
 int dogeBinaryFn_binary_rshift(int a, int b) { return a >> b; }
 
 std::map<ETokenType, intBinaryFunction> intBinaryOpsMap = {
-	std::make_pair(PLUS, dogeBinaryFn_plus),
-	std::make_pair(MINUS, dogeBinaryFn_minus),
-	std::make_pair(SLASH, dogeBinaryFn_multiplies),
-	std::make_pair(ASTERISK, dogeBinaryFn_divides),
-	std::make_pair(CARET, dogeBinaryFn_multiplies_self_n_times),
+	std::make_pair(ETokenType::PLUS, dogeBinaryFn_plus),
+	std::make_pair(ETokenType::MINUS, dogeBinaryFn_minus),
+	std::make_pair(ETokenType::MUL, dogeBinaryFn_multiplies),
+	std::make_pair(ETokenType::DIV, dogeBinaryFn_divides),
+	std::make_pair(ETokenType::MOD, dogeBinaryFn_modulo),
+	std::make_pair(ETokenType::BIT_NOT, dogeBinaryFn_binary_xor),
+	std::make_pair(ETokenType::BIT_AND, dogeBinaryFn_binary_and),
+	std::make_pair(ETokenType::BIT_OR, dogeBinaryFn_binary_or),
+	std::make_pair(ETokenType::BIT_XOR, dogeBinaryFn_binary_xor),
+	std::make_pair(ETokenType::GT, dogeBinaryFn_boolean_gt),
+	std::make_pair(ETokenType::LT, dogeBinaryFn_boolean_lt),
+
+	std::make_pair(ETokenType::NEQ, dogeBinaryFn_boolean_noteq),
+	std::make_pair(ETokenType::EQ, dogeBinaryFn_boolean_eq),
+	std::make_pair(ETokenType::GE, dogeBinaryFn_boolean_ge),
+	std::make_pair(ETokenType::LE, dogeBinaryFn_boolean_le),
+	std::make_pair(ETokenType::AND, dogeBinaryFn_boolean_and),
+	std::make_pair(ETokenType::OR, dogeBinaryFn_boolean_or),
+	std::make_pair(ETokenType::BIT_LSHIFT, dogeBinaryFn_binary_lshift),
+	std::make_pair(ETokenType::BIT_RSHIFT, dogeBinaryFn_binary_rshift)
 };
 
 typedef int(*intUnaryFunction)(int);
@@ -233,13 +269,11 @@ int dogeUnaryPrefixFn_boolean_negate(int a) { return !a; }
 
 int dogeUnaryPrefixFn_binary_complement(int a) { return ~a; }
 
-//int dogeUnaryPrefixFn_cstd_sizeof(int a) { return ~a; }
-
 std::map<ETokenType, intUnaryFunction> intUnaryPrefixOpsMap = {
-	std::make_pair(PLUS, dogeUnaryPrefixFn_plus),
-	std::make_pair(MINUS, dogeUnaryPrefixFn_minus),
-	std::make_pair(TILDE, dogeUnaryPrefixFn_binary_complement),
-	std::make_pair(BANG, dogeUnaryPrefixFn_boolean_negate)
+	std::make_pair(ETokenType::PLUS, dogeUnaryPrefixFn_plus),
+	std::make_pair(ETokenType::MINUS, dogeUnaryPrefixFn_minus),
+	std::make_pair(ETokenType::BIT_NOT, dogeUnaryPrefixFn_binary_complement),
+	std::make_pair(ETokenType::NOT, dogeUnaryPrefixFn_boolean_negate)
 };
 
 int OperatorExpression::Evaluate() const
@@ -254,10 +288,10 @@ int CallExpression::Evaluate() const
 
 int ConditionalExpression::Evaluate() const
 {
-	return m_condition->Evaluate() ? m_condition->Evaluate() : m_elseArm->Evaluate();
+	return m_condition->Evaluate() ? m_thenArm->Evaluate() : m_elseArm->Evaluate();
 }
 
-int NameExpression::Evaluate() const
+int NumberExpression::Evaluate() const
 {
 	return std::atoi(m_name.c_str());
 }

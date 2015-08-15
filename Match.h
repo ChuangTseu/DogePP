@@ -9,6 +9,16 @@ inline bool isHSpace(char c)
 	return c == ' ' || c == '\t';
 }
 
+inline bool isDigit(char c)
+{
+	return c >= '0' && c <= '9';
+}
+
+inline bool isValidInNumberChar(char c)
+{
+	return isDigit(c) || c == 'x';
+}
+
 inline bool isLiteralDelimiterChar(char c)
 {
 	return c == '"' || c == '\'';

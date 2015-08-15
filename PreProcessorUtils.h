@@ -8,3 +8,7 @@
 
 #define coutlr std::cout << '\n';
 
+#define DOGE_ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+#define DOGE_ARRAY_BEGIN(arr) (&arr[0])
+#define DOGE_ARRAY_END(arr) (DOGE_ARRAY_BEGIN(arr) + DOGE_ARRAY_SIZE(arr))
+

@@ -124,10 +124,16 @@ int valid;
 		#undef S1
 	}
 
-	#if (10 > 9) && ((2 + 4) /* haha */ == \
+	// "( ( 10 > 9 ) && ( 6 == ( 6 && ( 18 * ( 10 == 180 ) ) ) ) )"
+
+	#if (0x10 > 15) && ((2 + 4) /* haha */ == \
 	 6 && (18 * 10 =\
 = 180))
-		char Valid_Expression = !!true;
+		char Valid_If_Expression = !!if !!true;
+	#elif 4 & 1
+		char Valid_Elif_Expression = !!elif !!true;
+	#else
+		char Valid_Else_Expression = !!else !!whatever;
 	#endif
 }
 

@@ -306,7 +306,60 @@ struct IfCtx {
 
 	void UpdateElseIf(StrCTX& ctx, bool bEvaluation, StrSizeT directiveStartPos, StrSizeT directiveEndPos, bool& bOutMustSkip)
 	{
+		DOGE_ASSERT_MESSAGE(TopLevelCount() > 0, "Unexpected #else : no opening clause before\n");
 
+		RunningIfInfo& runningIfInfo = runningIfStack.top();
+
+		DOGE_ASSERT_MESSAGE(!runningIfInfo.bElseIsDone, "Unexpected #elif : #else for this clause has already been processed\n");
+
+		bool bTrueWasDoneBefore = runningIfInfo.bTrueIsDone;
+
+		if (bTrueWasDoneBefore)
+		{
+			if (runningIfInfo.bExpectingEndRemainingLineInfo)
+			{
+				runningIfInfo.end_remaining_zone = directiveStartPos;
+				runningIfInfo.bExpectingEndRemainingLineInfo = false;
+			}
+			else
+			{
+				// Nothing
+			}
+		}
+		else
+		{
+			if (bEvaluation)
+			{
+				runningIfInfo.bTrueIsDone = true; // Mandatory if else is reached while not true_is_set
+
+				runningIfInfo.start_remaining_zone = directiveEndPos;
+				runningIfInfo.bExpectingEndRemainingLineInfo = true;
+			}
+			else
+			{
+				// Nothing
+			}			
+		}
+
+		// Update skip/ignore mechanism
+
+		if (IsIgnoredScope()) // Already in ignored {scope}
+		{
+			bOutMustSkip = true;
+		}
+		else
+		{
+			if (bTrueWasDoneBefore || !bEvaluation) // Is false else {scope}
+			{
+				bOutMustSkip = true;
+				SetIgnoreScopeAboveLevel(TopLevelCount()); // Ignore this else {scope}
+			}
+			else
+			{
+				bOutMustSkip = false;
+				ClearIgnoreLevel();
+			}
+		}
 	}
 
 	void UpdateElse(StrCTX& ctx, StrSizeT directiveStartPos, StrSizeT directiveEndPos, bool& bOutMustSkip)
@@ -340,10 +393,6 @@ struct IfCtx {
 			runningIfInfo.start_remaining_zone = directiveEndPos;
 			runningIfInfo.bExpectingEndRemainingLineInfo = true;
 		}
-
-		// Update skip/ignore mechanism
-
-		bOutMustSkip = IsIgnoredScope() || bTrueWasDoneBefore;
 
 		// Update skip/ignore mechanism
 

@@ -25,6 +25,7 @@
 #include "CharUtils.h"
 #include "Match.h"
 #include "ErrorLogging.h"
+#include "ExpParser.h"
 
 #define VEC_SIZE_T(vec) decltype(vec.size())
 
@@ -82,9 +83,9 @@ DECLARE_ENUM_TEMPLATE_CTTI(EDirective)
 
 
 bool skipCtxHeadToNextValid(StrCTX& ctx);
-void preprocess_string(std::string& strBuffer);
+void process_string(std::string& strBuffer, bool bHandlePreprocessorDirectives = true);
 bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& outDirectiveStartPos);
-
+const Expression* EvaluateStringExpression(std::string strExp);
 
 bool skipEntireMultiLineComment(StrCTX& ctx)
 {
@@ -409,7 +410,7 @@ bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent)
 		StrSizeT lastLRLength;
 		if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1, &lastLRLength)) // Skip line break
 		{
-			itMultiLineContentPartEnd = ctx.head - 1;
+			itMultiLineContentPartEnd = ctx.head;
 			strMultiLineContent.append(itMultiLineContentPartStart, itMultiLineContentPartEnd);
 
 			ctx.Advance(1 + lastLRLength);
@@ -759,7 +760,37 @@ bool handleDirectiveContent_Pragma(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_If(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	DOGE_ASSERT_MESSAGE(false, "");
+	if (!isHSpace(pickNextChar(ctx)))
+	{
+		return false;
+	}
+
+	skipHSpaces(ctx);
+
+	std::string strMultilineContent;
+	if (!retrieveMultiLinePPContent(ctx, strMultilineContent))
+	{
+		return false;
+	}
+
+	process_string(strMultilineContent, false);
+
+	const Expression* expression = EvaluateStringExpression(strMultilineContent);
+	bool bYieldedValue = expression->Evaluate() ? true : false;
+
+	std::string strDebugExpression = expression->GetStringExpression();
+
+	printf("%s#if at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
+		directiveStartPos, bYieldedValue ? "'true'" : "'false'");
+
+	bool bMustSkip;
+	g_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+
+	if (bMustSkip)
+	{
+		return advanceToNextConditionDirective(ctx);
+	}
+
 	return true;
 }
 
@@ -837,7 +868,37 @@ bool handleDirectiveContent_Ifndef(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	DOGE_ASSERT_MESSAGE(false, "");
+	if (!isHSpace(pickNextChar(ctx)))
+	{
+		return false;
+	}
+
+	skipHSpaces(ctx);
+
+	std::string strMultilineContent;
+	if (!retrieveMultiLinePPContent(ctx, strMultilineContent))
+	{
+		return false;
+	}
+
+	process_string(strMultilineContent, false);
+
+	const Expression* expression = EvaluateStringExpression(strMultilineContent);
+	bool bYieldedValue = expression->Evaluate() ? true : false;
+
+	std::string strDebugExpression = expression->GetStringExpression();
+
+	printf("%s#elif at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
+		directiveStartPos, bYieldedValue ? "'true'" : "'false'");
+
+	bool bMustSkip;
+	g_ifCtx.UpdateElseIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+
+	if (bMustSkip)
+	{
+		return advanceToNextConditionDirective(ctx);
+	}
+
 	return true;
 }
 
@@ -910,7 +971,7 @@ bool handleDirectiveContent(StrCTX& ctx, EDirective eDirective, StrSizeT directi
 
 std::vector<std::string> g_encounteredIdentifiers;
 
-void preprocess_string(std::string& strBuffer)
+void process_string(std::string& strBuffer, bool bHandlePreprocessorDirectives)
 {
 	StrCTX ctx{ strBuffer, strBuffer.cbegin() };
 
@@ -942,7 +1003,7 @@ void preprocess_string(std::string& strBuffer)
 			ctx.charNumber = 1;
 			ctx.colNumber = 1;
 		}
-		else if (c == '#') {
+		else if (bHandlePreprocessorDirectives && c == '#') {
 			StrSizeT directiveStartPos;
 			EDirective eDirective;
 			if (!retrieveDirectiveType(ctx, eDirective, directiveStartPos))
@@ -1005,40 +1066,6 @@ void preprocess_string(std::string& strBuffer)
 	}
 }
 
-struct CondiTestInfo {
-	EDirective eCondDir;
-	StrSizeT linePos;
-	bool bYields;
-};
-
-/*
-#if BIGGER_PICTURE
-	#if N == 1
-	#elif N == 2
-		#ifdef GO_DEEP
-		#else
-		#endif
-	#elif N == 3
-	#else
-	#endif
-#endif
-*/
-
-std::vector<CondiTestInfo> condiTestData {
-	{ e_directive_if, 12, true },
-	{ e_directive_ifndef, 14, false },
-	{ e_directive_elif, 17, true },
-	{ e_directive_ifdef, 19, false },
-	{ e_directive_else, 21, {} },
-	{ e_directive_endif, 23, {} },
-	{ e_directive_elif, 25, false },
-	{ e_directive_else, 28, {} },
-	{ e_directive_endif, 31, {} },
-	{ e_directive_endif, 33, {} },
-};
-
-#include "ExpParser.h"
-
 static char IndirectLUT_CharAsCStr[256 * 2];
 int Init_CharAsCStr_Data() {
 	for (int i = 0; i < 256; ++i)
@@ -1054,17 +1081,20 @@ const char* CharAsCStr(char c)
 	return &IndirectLUT_CharAsCStr[static_cast<int>(c) << 1];
 }
 
-void TestEvaluationStringExpression(std::string strExp)
+
+template <class T>
+bool CArrayIsPresent(const T carray[], size_t arraySize, T val)
+{
+	return std::find(carray, carray + arraySize, val) != (carray + arraySize);
+}
+
+const Expression* EvaluateStringExpression(std::string strExp)
 {
 	StrCTX expStrCtx(strExp);
 
-	const char* opSymbols = "?:^~%/*()!&|+-><" ">=" "<=" "&&" "||" "==" "!=" "<<" ">>";
-
-	const char singleOnlyCharSymbol[] = "?:^~%*/()";
-
-	const char doubleMaybeCharSymbol[] = "!&|+-><=";
-
-	const char doubleOnlyCharSecondSymbol[] = "=&|<>";
+	static const char singleOnlyCharSymbol[] = "?:^~%*/()";
+	static const char doubleMaybeCharSymbol[] = "!&|+-><=";
+	static const char doubleOnlyCharSecondSymbol[] = "=&|<>";
 
 	std::vector<Token> vParsedTokens;
 
@@ -1072,7 +1102,11 @@ void TestEvaluationStringExpression(std::string strExp)
 	{
 		char c = pickNextChar(expStrCtx);
 
-		if (isHSpace(c))
+		if (c == '\n')
+		{
+			break;
+		}
+		else if (isHSpace(c))
 		{
 			expStrCtx.AdvanceHead();
 		}
@@ -1102,7 +1136,7 @@ void TestEvaluationStringExpression(std::string strExp)
 			Token numberToken{ ETokenType::NUMBER, fullNumberSubLoc.ExtractSubStr(expStrCtx.baseStr) };
 			vParsedTokens.push_back(numberToken);
 		}
-		else if (std::find(std::begin(singleOnlyCharSymbol), std::end(singleOnlyCharSymbol), c))
+		else if (CArrayIsPresent(singleOnlyCharSymbol, DOGE_ARRAY_SIZE(singleOnlyCharSymbol), c))
 		{
 			ETokenType eOperator = ETokenTypeFromSingleCharOperator(CharAsCStr(c));
 			DOGE_ASSERT(eOperator != ETokenType::UNKNOWN);
@@ -1111,7 +1145,7 @@ void TestEvaluationStringExpression(std::string strExp)
 
 			expStrCtx.AdvanceHead();
 		}
-		else if (std::find(std::begin(doubleMaybeCharSymbol), std::end(doubleMaybeCharSymbol), c))
+		else if (CArrayIsPresent(doubleMaybeCharSymbol, DOGE_ARRAY_SIZE(doubleMaybeCharSymbol), c))
 		{
 			StrSizeT doubleCharOpStartPos = expStrCtx.CurrentPos();
 
@@ -1119,7 +1153,7 @@ void TestEvaluationStringExpression(std::string strExp)
 
 			// Handcrafted one symbol "lookahead" for those modest needs
 			if (!expStrCtx.IsEnded() &&
-				std::find(std::begin(doubleOnlyCharSecondSymbol), std::end(doubleOnlyCharSecondSymbol), (c = pickNextChar(expStrCtx))))
+				CArrayIsPresent(doubleOnlyCharSecondSymbol, DOGE_ARRAY_SIZE(doubleOnlyCharSecondSymbol), pickNextChar(expStrCtx)))
 			{
 				StrSizeT doubleEndOpStartPos = expStrCtx.CurrentPos() + 1;
 				SubStrLoc doubleCharOpSubLoc{ doubleCharOpStartPos, doubleEndOpStartPos };
@@ -1153,30 +1187,26 @@ void TestEvaluationStringExpression(std::string strExp)
 	ExpParser expParser(vParsedTokens.cbegin());
 	const Expression* result = expParser.ParseExpression();
 
-	std::cout << result->GetStringExpression() << '\n';
-	std::cout << result->Evaluate() << '\n';
+	return result;
 }
 
 int main(int argc, char* argv[])
 {
 	//std::string testExpressionString = "(-1+20)*1?10:3*4";
-	std::string testExpressionString = "3 < 3";
+	//std::string testExpressionString = "(1 > 0 && 3 ? 5 : 6) * 10";
+	//TestEvaluationStringExpression(testExpressionString);
 
-	TestEvaluationStringExpression(testExpressionString);
+	/*std::string strUserinput;
+	while (getline(std::cin, strUserinput))
+	{
+		std::cout << "===> " << EvaluateStringExpression(strUserinput) << '\n';
+	}
 
-	//std::vector<Token> vTokens;
-	//BuildTokenVector(vStringTokens, vTokens);
-	//ExpParser expParser(vTokens.cbegin());
-	//const Expression* result = expParser.ParseExpression();
-
-	//std::cout << result->GetStringExpression() << '\n';
-	//std::cout << result->Evaluate() << '\n';
-
-	return 0;
+	return 0;*/
 
 	std::string strFile;
 	DOGE_ASSERT(readFileToString("testfile.txt", strFile));
-	preprocess_string(strFile);
+	process_string(strFile);
 
 	std::cout << "===================== BOF =====================\n";
 	std::cout << strFile;
@@ -1197,94 +1227,6 @@ int main(int argc, char* argv[])
 	}
 
 	coutlr;
-
-	return 0;
-
-	std::string strExclDirTest;
-
-	for (int i = 0; i < 40; ++i)
-	{
-		strExclDirTest += std::to_string(i);
-		strExclDirTest += '\n';
-	}
-
-	for (size_t nCond = 0; nCond < condiTestData.size(); ++nCond)
-	{
-		const CondiTestInfo& currentCond = condiTestData[nCond];
-
-		switch (currentCond.eCondDir)
-		{
-
-		case e_directive_if:
-		{
-			RunningIfInfo runningIfInfo;
-			runningIfInfo.bElseIsDone = false;
-			runningIfInfo.bTrueIsDone = currentCond.bYields;
-			runningIfInfo.start_replaced_zone = currentCond.linePos;
-
-			runningIfInfo.level = g_ifCtx.runningIfStack.size();
-
-			printf("%s#if at line %d yields %s\n", tabIndentStr(runningIfInfo.level), 
-				currentCond.linePos, currentCond.bYields ? "'true'" : "'false'");
-
-			if (currentCond.bYields)
-			{
-				runningIfInfo.start_remaining_zone = currentCond.linePos + 1;
-				runningIfInfo.bExpectingEndRemainingLineInfo = true;
-			}
-
-			g_ifCtx.runningIfStack.push(runningIfInfo);
-		}
-
-			break;
-
-		case e_directive_elif:
-		{
-			DOGE_ASSERT(g_ifCtx.runningIfStack.size() > 0);
-
-			RunningIfInfo& runningIfInfo = g_ifCtx.runningIfStack.top();
-
-			DOGE_ASSERT(!runningIfInfo.bElseIsDone);
-
-			if (runningIfInfo.bTrueIsDone)
-			{
-				printf("%s#elif at line %d yields %s\n", tabIndentStr(runningIfInfo.level), currentCond.linePos, "'whatever'");
-
-				if (runningIfInfo.bExpectingEndRemainingLineInfo)
-				{
-					runningIfInfo.end_remaining_zone = currentCond.linePos;
-					runningIfInfo.bExpectingEndRemainingLineInfo = false;
-				}
-				else
-				{
-					// Nothing
-				}
-			}
-			else
-			{
-				runningIfInfo.bTrueIsDone = currentCond.bYields;
-
-				printf("%s#elif at line %d yields %s\n", tabIndentStr(runningIfInfo.level), 
-					currentCond.linePos, currentCond.bYields ? "'true'" : "'false'");
-				
-				if (currentCond.bYields)
-				{
-					runningIfInfo.start_remaining_zone = currentCond.linePos + 1;
-					runningIfInfo.bExpectingEndRemainingLineInfo = true;
-				}
-			}
-		}
-
-			break;
-
-		default:
-			break;
-		}
-	}
-
-	/*std::cout << "====================================\n";
-	std::cout << strExclDirTest;
-	std::cout << "====================================\n";*/
 
 	return 0;
 }

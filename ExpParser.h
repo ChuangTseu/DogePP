@@ -178,14 +178,14 @@ struct Token {
 
 struct Precedence {
 	// Ordered in increasing precedence.
-	static const int ASSIGNMENT = 1;
-	static const int CONDITIONAL = 2;
-	static const int SUM = 3;
-	static const int PRODUCT = 4;
-	static const int EXPONENT = 5;
-	static const int PREFIX = 6;
-	static const int POSTFIX = 7;
-	static const int CALL = 8;
+	//static const int ASSIGNMENT = 1;
+	static const int CONDITIONAL = 15;
+	//static const int SUM = 3;
+	//static const int PRODUCT = 4;
+	//static const int EXPONENT = 5;
+	//static const int PREFIX = 6;
+	//static const int POSTFIX = 7;
+	//static const int CALL = 8;
 };
 
 class Expression {
@@ -294,6 +294,9 @@ class Parser;
 
 typedef std::vector<Token>::const_iterator TokenCIt;
 
+#define LOWEST_PRECEDENCE	(100)
+#define HIGHEST_PRECEDENCE	(0)
+
 class Parser {
 public:
 	Parser(TokenCIt tokenIt) : m_tokens(tokenIt) {}
@@ -302,7 +305,7 @@ public:
 
 	void Register(ETokenType eTokenType, const InfixParselet* parselet);
 
-	const Expression* ParseExpression(int precedence = 0);
+	const Expression* ParseExpression(int precedence = LOWEST_PRECEDENCE);
 
 	Token Consume();
 	Token ConsumeExpected(ETokenType eExpected);
@@ -346,7 +349,7 @@ public:
 		// lower precedence when parsing the right-hand side. This will let a
 		// parselet with the same precedence appear on the right, which will then
 		// take *this* parselet's result as its left-hand argument.
-		const Expression* right = parser.ParseExpression(m_precedence - (m_bIsRight ? 1 : 0));
+		const Expression* right = parser.ParseExpression(m_precedence + (m_bIsRight ? 1 : 0));
 
 		return new OperatorExpression(left, token.m_type, right);
 	}
@@ -365,7 +368,7 @@ public:
 	const Expression* Parse(Parser& parser, const Expression* left, const Token& token) const {
 		const Expression* thenArm = parser.ParseExpression();
 		parser.ConsumeExpected(ETokenType::COLON);
-		const Expression* elseArm = parser.ParseExpression(Precedence::CONDITIONAL - 1);
+		const Expression* elseArm = parser.ParseExpression(Precedence::CONDITIONAL + 1);
 
 		return new ConditionalExpression(left, thenArm, elseArm);
 	}

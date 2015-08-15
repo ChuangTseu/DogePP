@@ -20,7 +20,7 @@ const Expression* Parser::ParseExpression(int precedence)
 
 	const Expression* left = prefix->Parse(*this, token);
 
-	while (precedence < GetPrecedence()) {
+	while (precedence > GetPrecedence()) {
 		token = Consume();
 
 		const auto itInfixParselet = m_infixParseletsMap.find(token.m_type);
@@ -82,7 +82,7 @@ int Parser::GetPrecedence()
 		return parselet->GetPrecedence();
 	}
 
-	return 0;
+	return LOWEST_PRECEDENCE;
 }
 
 
@@ -158,7 +158,7 @@ static std::string strSpace = " ";
 
 std::string OperatorExpression::GetStringExpression() const
 {
-	return m_left->GetStringExpression() + " " + LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + " " + m_right->GetStringExpression();
+	return "( " + m_left->GetStringExpression() + " " + LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + " " + m_right->GetStringExpression() + " )";
 }
 
 std::string CallExpression::GetStringExpression() const
@@ -178,7 +178,7 @@ std::string CallExpression::GetStringExpression() const
 
 std::string ConditionalExpression::GetStringExpression() const
 {
-	return m_condition->GetStringExpression() + " ? " + m_thenArm->GetStringExpression() + " : " + m_elseArm->GetStringExpression();
+	return "( " + m_condition->GetStringExpression() + " ? " + m_thenArm->GetStringExpression() + " : " + m_elseArm->GetStringExpression() + " )";
 }
 
 std::string NumberExpression::GetStringExpression() const
@@ -188,12 +188,12 @@ std::string NumberExpression::GetStringExpression() const
 
 std::string PostfixExpression::GetStringExpression() const
 {
-	return m_left->GetStringExpression() + LUT_ETokenType_OperatorChar[EASINT(m_eOperator)];
+	return "( " + m_left->GetStringExpression() + LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + " )";
 }
 
 std::string PrefixExpression::GetStringExpression() const
 {
-	return LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + m_right->GetStringExpression();
+	return "( " + (LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + m_right->GetStringExpression()) + " )";
 }
 
 template <class K, class T>

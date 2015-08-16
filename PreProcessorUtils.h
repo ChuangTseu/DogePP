@@ -12,3 +12,5 @@
 #define DOGE_ARRAY_BEGIN(arr) (&arr[0])
 #define DOGE_ARRAY_END(arr) (DOGE_ARRAY_BEGIN(arr) + DOGE_ARRAY_SIZE(arr))
 
+#define EASINT(eEnum) (static_cast<int>(eEnum))
+

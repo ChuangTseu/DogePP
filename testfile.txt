@@ -130,7 +130,7 @@ int valid;
 	 6 && (18 * 10 =\
 = 180))
 		char Valid_If_Expression = !!if !!true;
-	#elif 4 & 1
+	#elif 5 & 1
 		char Valid_Elif_Expression = !!elif !!true;
 	#else
 		char Valid_Else_Expression = !!else !!whatever;

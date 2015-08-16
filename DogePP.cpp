@@ -13,6 +13,7 @@
 #include <memory>
 #include <streambuf>
 #include <algorithm>
+#include <memory>
 
 #include "EnumCTTI.h"
 
@@ -85,7 +86,7 @@ DECLARE_ENUM_TEMPLATE_CTTI(EDirective)
 bool skipCtxHeadToNextValid(StrCTX& ctx);
 void process_string(std::string& strBuffer, bool bHandlePreprocessorDirectives = true);
 bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& outDirectiveStartPos);
-const Expression* EvaluateStringExpression(std::string strExp);
+std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp);
 
 bool skipEntireMultiLineComment(StrCTX& ctx)
 {
@@ -775,7 +776,7 @@ bool handleDirectiveContent_If(StrCTX& ctx, StrSizeT directiveStartPos)
 
 	process_string(strMultilineContent, false);
 
-	const Expression* expression = EvaluateStringExpression(strMultilineContent);
+	std::unique_ptr<const Expression> expression = EvaluateStringExpression(strMultilineContent);
 	bool bYieldedValue = expression->Evaluate() ? true : false;
 
 	std::string strDebugExpression = expression->GetStringExpression();
@@ -883,7 +884,7 @@ bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 
 	process_string(strMultilineContent, false);
 
-	const Expression* expression = EvaluateStringExpression(strMultilineContent);
+	std::unique_ptr<const Expression> expression = EvaluateStringExpression(strMultilineContent);
 	bool bYieldedValue = expression->Evaluate() ? true : false;
 
 	std::string strDebugExpression = expression->GetStringExpression();
@@ -1088,7 +1089,7 @@ bool CArrayIsPresent(const T carray[], size_t arraySize, T val)
 	return std::find(carray, carray + arraySize, val) != (carray + arraySize);
 }
 
-const Expression* EvaluateStringExpression(std::string strExp)
+std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 {
 	StrCTX expStrCtx(strExp);
 
@@ -1185,7 +1186,7 @@ const Expression* EvaluateStringExpression(std::string strExp)
 	vParsedTokens.push_back({ ETokenType::EOL, "" });
 
 	ExpParser expParser(vParsedTokens.cbegin());
-	const Expression* result = expParser.ParseExpression();
+	std::unique_ptr<const Expression> result = expParser.ParseExpression();
 
 	return result;
 }

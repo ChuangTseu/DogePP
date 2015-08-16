@@ -1,33 +1,33 @@
 #include "ExpParser.h"
 
-void Parser::Register(ETokenType eTokenType, const InfixParselet* parselet)
+void Parser::Register(ETokenType eTokenType, std::unique_ptr<const InfixParselet> parselet)
 {
-	m_infixParseletsMap.insert(std::make_pair(eTokenType, parselet));
+	m_infixParseletsMap.insert(std::make_pair(eTokenType, std::move(parselet)));
 }
 
-void Parser::Register(ETokenType eTokenType, const PrefixParselet* parselet)
+void Parser::Register(ETokenType eTokenType, std::unique_ptr<const PrefixParselet> parselet)
 {
-	m_prefixParseletsMap.insert(std::make_pair(eTokenType, parselet));
+	m_prefixParseletsMap.insert(std::make_pair(eTokenType, std::move(parselet)));
 }
 
-const Expression* Parser::ParseExpression(int precedence)
+std::unique_ptr<const Expression> Parser::ParseExpression(int precedence)
 {
 	Token token = Consume();
 
 	const auto itPrefixParselet = m_prefixParseletsMap.find(token.m_type);
 	DOGE_ASSERT_MESSAGE(itPrefixParselet != m_prefixParseletsMap.cend(), "Could not parse '%s'.\n", token.m_text.c_str());
-	const PrefixParselet* prefix = itPrefixParselet->second;
+	const PrefixParselet* prefix = itPrefixParselet->second.get();
 
-	const Expression* left = prefix->Parse(*this, token);
+	std::unique_ptr<const Expression> left = prefix->Parse(*this, token);
 
 	while (precedence > GetPrecedence()) {
 		token = Consume();
 
 		const auto itInfixParselet = m_infixParseletsMap.find(token.m_type);
 		DOGE_ASSERT_MESSAGE(itInfixParselet != m_infixParseletsMap.cend(), "Could not parse '%s'.\n", token.m_text.c_str());
-		const InfixParselet* infix = itInfixParselet->second;
+		const InfixParselet* infix = itInfixParselet->second.get();
 
-		left = infix->Parse(*this, left, token);
+		left = infix->Parse(*this, std::move(left), token);
 	}
 
 	return left;
@@ -78,7 +78,7 @@ int Parser::GetPrecedence()
 	const auto itInfixParselet = m_infixParseletsMap.find(LookAhead(0).m_type);
 	if (itInfixParselet != m_infixParseletsMap.cend())
 	{
-		const InfixParselet* parselet = itInfixParselet->second;
+		const InfixParselet* parselet = itInfixParselet->second.get();
 		return parselet->GetPrecedence();
 	}
 
@@ -88,46 +88,46 @@ int Parser::GetPrecedence()
 
 ExpParser::ExpParser(TokenCIt tokenIt) : Parser(tokenIt)
 {
-	Register(ETokenType::NUMBER, new NumberParselet());
-	Register(ETokenType::QUESTION, new ConditionalParselet());
-	Register(ETokenType::LEFT_PAREN, new GroupParselet());
+	Register(ETokenType::NUMBER, std::make_unique<NumberParselet>());
+	Register(ETokenType::QUESTION, std::make_unique<ConditionalParselet>());
+	Register(ETokenType::LEFT_PAREN, std::make_unique<GroupParselet>());
 
 	// Register the simple operator parselets.
 
 	// Precedence values from https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B
 
-	Prefix(ETokenType::PLUS, 3);
-	Prefix(ETokenType::MINUS, 3);
-	Prefix(ETokenType::BIT_NOT, 3);
-	Prefix(ETokenType::NOT, 3);
+	Prefix(ETokenType::PLUS, GetOperatorPrefixPrecedence(ETokenType::PLUS));
+	Prefix(ETokenType::MINUS, GetOperatorPrefixPrecedence(ETokenType::MINUS));
+	Prefix(ETokenType::BIT_NOT, GetOperatorPrefixPrecedence(ETokenType::BIT_NOT));
+	Prefix(ETokenType::NOT, GetOperatorPrefixPrecedence(ETokenType::NOT));
 
-	InfixLeft(ETokenType::MUL, 5);
-	InfixLeft(ETokenType::DIV, 5);
-	InfixLeft(ETokenType::MOD, 5);
+	InfixLeft(ETokenType::MUL, GetOperatorInfixPrecedence(ETokenType::MUL));
+	InfixLeft(ETokenType::DIV, GetOperatorInfixPrecedence(ETokenType::DIV));
+	InfixLeft(ETokenType::MOD, GetOperatorInfixPrecedence(ETokenType::MOD));
 
-	InfixLeft(ETokenType::PLUS, 6);
-	InfixLeft(ETokenType::MINUS, 6);
+	InfixLeft(ETokenType::PLUS, GetOperatorInfixPrecedence(ETokenType::PLUS));
+	InfixLeft(ETokenType::MINUS, GetOperatorInfixPrecedence(ETokenType::MINUS));
 
-	InfixLeft(ETokenType::BIT_LSHIFT, 7);
-	InfixLeft(ETokenType::BIT_RSHIFT, 7);
+	InfixLeft(ETokenType::BIT_LSHIFT, GetOperatorInfixPrecedence(ETokenType::BIT_LSHIFT));
+	InfixLeft(ETokenType::BIT_RSHIFT, GetOperatorInfixPrecedence(ETokenType::BIT_RSHIFT));
 
-	InfixLeft(ETokenType::LT, 8);
-	InfixLeft(ETokenType::LE, 8);
-	InfixLeft(ETokenType::GT, 8);
-	InfixLeft(ETokenType::GE, 8);
+	InfixLeft(ETokenType::LT, GetOperatorInfixPrecedence(ETokenType::LT));
+	InfixLeft(ETokenType::LE, GetOperatorInfixPrecedence(ETokenType::LE));
+	InfixLeft(ETokenType::GT, GetOperatorInfixPrecedence(ETokenType::GT));
+	InfixLeft(ETokenType::GE, GetOperatorInfixPrecedence(ETokenType::GE));
 
-	InfixLeft(ETokenType::EQ, 9);
-	InfixLeft(ETokenType::NEQ, 9);
+	InfixLeft(ETokenType::EQ, GetOperatorInfixPrecedence(ETokenType::EQ));
+	InfixLeft(ETokenType::NEQ, GetOperatorInfixPrecedence(ETokenType::NEQ));
 
-	InfixLeft(ETokenType::BIT_AND, 10);
+	InfixLeft(ETokenType::BIT_AND, GetOperatorInfixPrecedence(ETokenType::BIT_AND));
 
-	InfixLeft(ETokenType::BIT_XOR, 11);
+	InfixLeft(ETokenType::BIT_XOR, GetOperatorInfixPrecedence(ETokenType::BIT_XOR));
 
-	InfixLeft(ETokenType::BIT_OR, 12);
+	InfixLeft(ETokenType::BIT_OR, GetOperatorInfixPrecedence(ETokenType::BIT_OR));
 
-	InfixLeft(ETokenType::AND, 13);
+	InfixLeft(ETokenType::AND, GetOperatorInfixPrecedence(ETokenType::AND));
 
-	InfixLeft(ETokenType::OR, 14);
+	InfixLeft(ETokenType::OR, GetOperatorInfixPrecedence(ETokenType::OR));
 }
 
 ExpParser::~ExpParser()
@@ -136,22 +136,22 @@ ExpParser::~ExpParser()
 
 void ExpParser::Postfix(ETokenType eTokenType, int precedence)
 {
-	Register(eTokenType, new PostfixOperatorParselet(precedence));
+	Register(eTokenType, std::make_unique<PostfixOperatorParselet>(precedence));
 }
 
 void ExpParser::Prefix(ETokenType eTokenType, int precedence)
 {
-	Register(eTokenType, new PrefixOperatorParselet(precedence));
+	Register(eTokenType, std::make_unique<PrefixOperatorParselet>(precedence));
 }
 
 void ExpParser::InfixLeft(ETokenType eTokenType, int precedence)
 {
-	Register(eTokenType, new BinaryOperatorParselet(precedence, false));
+	Register(eTokenType, std::make_unique<BinaryOperatorParselet>(precedence, false));
 }
 
 void ExpParser::InfixRight(ETokenType eTokenType, int precedence)
 {
-	Register(eTokenType, new BinaryOperatorParselet(precedence, true));
+	Register(eTokenType, std::make_unique<BinaryOperatorParselet>(precedence, true));
 }
 
 static std::string strSpace = " ";
@@ -164,7 +164,7 @@ std::string OperatorExpression::GetStringExpression() const
 std::string CallExpression::GetStringExpression() const
 {
 	std::string strArgsList;
-	for (const Expression* argExp : m_args)
+	for (const std::unique_ptr<const Expression>& argExp : m_args)
 	{
 		strArgsList += argExp->GetStringExpression();
 		if (argExp != m_args.back())
@@ -197,14 +197,12 @@ std::string PrefixExpression::GetStringExpression() const
 }
 
 template <class K, class T>
-T MapMandatoryGet(const std::map<K, T>& stdMap, const K& key)
+T StdMap_MandatoryGet(const std::map<K, T>& stdMap, const K& key)
 {
 	const auto& it = stdMap.find(key);
 	DOGE_ASSERT(it != stdMap.cend());
 	return it->second;
 }
-
-#include <functional>
 
 inline int powint(int a, int b) {
 	int base = a, res = 1;
@@ -237,7 +235,7 @@ int dogeBinaryFn_binary_xor(int a, int b) { return a ^ b; }
 int dogeBinaryFn_binary_lshift(int a, int b) { return a << b; }
 int dogeBinaryFn_binary_rshift(int a, int b) { return a >> b; }
 
-std::map<ETokenType, intBinaryFunction> intBinaryOpsMap = {
+static const std::map<ETokenType, intBinaryFunction> intBinaryOpsMap = {
 	std::make_pair(ETokenType::PLUS, dogeBinaryFn_plus),
 	std::make_pair(ETokenType::MINUS, dogeBinaryFn_minus),
 	std::make_pair(ETokenType::MUL, dogeBinaryFn_multiplies),
@@ -269,7 +267,7 @@ int dogeUnaryPrefixFn_boolean_negate(int a) { return !a; }
 
 int dogeUnaryPrefixFn_binary_complement(int a) { return ~a; }
 
-std::map<ETokenType, intUnaryFunction> intUnaryPrefixOpsMap = {
+static const std::map<ETokenType, intUnaryFunction> intUnaryPrefixOpsMap = {
 	std::make_pair(ETokenType::PLUS, dogeUnaryPrefixFn_plus),
 	std::make_pair(ETokenType::MINUS, dogeUnaryPrefixFn_minus),
 	std::make_pair(ETokenType::BIT_NOT, dogeUnaryPrefixFn_binary_complement),
@@ -278,7 +276,7 @@ std::map<ETokenType, intUnaryFunction> intUnaryPrefixOpsMap = {
 
 int OperatorExpression::Evaluate() const
 {
-	return MapMandatoryGet(intBinaryOpsMap, m_eOperator)(m_left->Evaluate(), m_right->Evaluate());
+	return StdMap_MandatoryGet(intBinaryOpsMap, m_eOperator)(m_left->Evaluate(), m_right->Evaluate());
 }
 
 int CallExpression::Evaluate() const
@@ -304,5 +302,5 @@ int PostfixExpression::Evaluate() const
 
 int PrefixExpression::Evaluate() const
 {
-	return MapMandatoryGet(intUnaryPrefixOpsMap, m_eOperator)(m_right->Evaluate());
+	return StdMap_MandatoryGet(intUnaryPrefixOpsMap, m_eOperator)(m_right->Evaluate());
 }

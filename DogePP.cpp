@@ -28,6 +28,8 @@
 #include "ErrorLogging.h"
 #include "MacroExpParser.h"
 
+bool bKeepComment = true;
+
 #define VEC_SIZE_T(vec) decltype(vec.size())
 
 #define X_LIST_OF_Directive \
@@ -82,12 +84,38 @@ const char* EDirectiveToSzName(EDirective eDirective)
 
 DECLARE_ENUM_TEMPLATE_CTTI(EDirective)
 
+enum {
+	IGNORE_ML_COMMENT = 1,
+	IGNORE_SL_COMMENT = 2,
+	INSIDE_LITERAL = 4
+};
 
 bool skipCtxHeadToNextValid(StrCTX& ctx);
 void preprocess_file_string(std::string& strBuffer);
 void preprocess_if_directive_string(std::string& strBuffer);
 bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& outDirectiveStartPos);
 std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp);
+char ConsumeChar(StrCTX& ctx, uint32_t ignoreField = 0);
+char LookChar(StrCTX& ctx, uint32_t ignoreField = 0);
+SubStrLoc GetSubLocUntilChar(StrCTX& ctx, char c, uint32_t ignoreField);
+SubStrLoc GetSubLocUntilSz(StrCTX& ctx, const char* sz, uint32_t ignoreField);
+
+#if 0
+char pickNextChar(StrCTX& ctx)
+{
+	DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
+	if (ctx.numNeededCommentSubtitutions > 0)
+	{
+		--ctx.numNeededCommentSubtitutions;
+		//return ' ';
+		return ctx.HeadChar();
+	}
+	else
+	{
+		return ctx.HeadChar();
+	}
+}
+#endif
 
 bool skipEntireMultiLineComment(StrCTX& ctx)
 {
@@ -105,6 +133,69 @@ bool skipEntireMultiLineComment(StrCTX& ctx)
 	ctx.Advance(COMMENT_ML_END_LENGTH);
 
 	return true;
+}
+
+SubStrLoc GetMultiLineCommentSubLoc(StrCTX& ctx)
+{
+	SubStrLoc mlCommentSubLoc = GetSubLocUntilSz(ctx, "*/", IGNORE_ML_COMMENT | IGNORE_SL_COMMENT);
+
+	return mlCommentSubLoc;
+
+	/*
+	mlCommentSubLoc.m_start = ctx.CurrentPos();
+	mlCommentSubLoc.m_end = mlCommentSubLoc.m_start;
+
+	const char* cstr = ctx.HeadCStr();
+
+	while (*cstr && !isMultiLineCommentEnd(cstr))
+	{
+		++cstr;
+		++mlCommentSubLoc.m_end;
+	}
+
+	DOGE_ASSERT_MESSAGE(! *cstr,
+		"Error at multi line comment starting line %d. Could not get multiline comment end, unexpected EOL.\n", ctx.lineNumber);
+
+	mlCommentSubLoc.m_end += COMMENT_ML_END_LENGTH;
+
+	return mlCommentSubLoc;
+	*/
+}
+
+SubStrLoc GetSingleLineCommentSubLoc(StrCTX& ctx)
+{
+	SubStrLoc slCommentSubLoc = GetSubLocUntilChar(ctx, '\n', IGNORE_ML_COMMENT | IGNORE_SL_COMMENT);
+
+	return slCommentSubLoc;
+
+	/*
+	slCommentSubLoc.m_start = ctx.CurrentPos();
+	slCommentSubLoc.m_end = slCommentSubLoc.m_start;
+
+	const char* cstr = ctx.HeadCStr();
+
+	StrSizeT lrLength;
+	while (*cstr && !isLineReturn(cstr, &lrLength))
+	{
+		if (*cstr == '\\' && isLineReturn(cstr + 1, &lrLength))
+		{
+			cstr += 1 + lrLength;
+			slCommentSubLoc.m_end += 1 + lrLength;
+		}
+		else
+		{
+			++cstr;
+			++slCommentSubLoc.m_end;
+		}
+	}
+
+	DOGE_ASSERT_MESSAGE(!*cstr,
+		"Error at multi line comment starting line %d. Could not get multiline comment end, unexpected EOL.\n", ctx.lineNumber);
+
+	slCommentSubLoc.m_end += lrLength;
+
+	return slCommentSubLoc;
+	*/
 }
 
 bool skipEntireLine(StrCTX& ctx)
@@ -126,19 +217,11 @@ bool skipEntireLine(StrCTX& ctx)
 	return true;
 }
 
-char pickNextChar(StrCTX& ctx)
-{
-	char c;
-	DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
-	return ctx.HeadChar();
-	return c;
-}
-
 void skipHSpaces(StrCTX& ctx)
 {
-	while (isHSpace(pickNextChar(ctx)))
+	while (isHSpace(LookChar(ctx)))
 	{
-		ctx.Advance(1);
+		ConsumeChar(ctx);
 	}
 }
 
@@ -146,21 +229,11 @@ bool skipMultiScopeCharEnclosed(StrCTX& ctx, char c_open, char c_close)
 {
 	DOGE_ASSERT_MESSAGE(c_open != c_close, "Error. Cannot handle multiple scopes when opening and closing sequence are the same.\n");
 
-	if (ctx.IsEnded())
-	{
-		return false;
-	}
-
 	skipHSpaces(ctx);
-
-	if (ctx.IsEnded())
-	{
-		return false;
-	}
 
 	int pileCount = 0;
 
-	if (pickNextChar(ctx) != c_open)
+	if (ConsumeChar(ctx) != c_open)
 	{
 		return false;
 	}
@@ -169,7 +242,7 @@ bool skipMultiScopeCharEnclosed(StrCTX& ctx, char c_open, char c_close)
 
 	while (!ctx.IsEnded())
 	{
-		char c = pickNextChar(ctx);
+		char c = ConsumeChar(ctx);
 
 		if (c == '\n')
 		{
@@ -183,11 +256,6 @@ bool skipMultiScopeCharEnclosed(StrCTX& ctx, char c_open, char c_close)
 		{
 			--pileCount;
 		}
-		else {
-
-		}
-
-		ctx.AdvanceHead();
 
 		if (pileCount == 0)
 		{
@@ -201,9 +269,9 @@ bool skipMultiScopeCharEnclosed(StrCTX& ctx, char c_open, char c_close)
 bool advanceToNextConditionDirective(StrCTX& ctx)
 {
 	char c;
-	while (!ctx.IsEnded() && ((c = pickNextChar(ctx)) != '#'))
+	while (!ctx.IsEnded() && ((c = LookChar(ctx)) != '#'))
 	{
-		ctx.Advance(1);
+		ConsumeChar(ctx);
 	}
 
 	if (ctx.IsEnded())
@@ -234,10 +302,17 @@ bool advanceToNextConditionDirective(StrCTX& ctx)
 
 bool advanceToEndOfLiteral(StrCTX& ctx, char litEndChar)
 {
+	SubStrLoc literalSubLoc = GetSubLocUntilChar(ctx, litEndChar, IGNORE_ML_COMMENT | IGNORE_SL_COMMENT | INSIDE_LITERAL);
+
+	ctx.SetHead(literalSubLoc.m_end);
+
+	return true;
+
+	/*
 	char c;
-	while (!ctx.IsEnded() && ((c = pickNextChar(ctx)) != '\n') && c != litEndChar)
+	while (!ctx.IsEnded() && ((c = LookChar(ctx)) != '\n') && c != litEndChar)
 	{
-		ctx.Advance(1);
+		ConsumeChar(ctx);
 
 		if (c == '\\')
 		{
@@ -258,8 +333,10 @@ bool advanceToEndOfLiteral(StrCTX& ctx, char litEndChar)
 		ctx.Advance(1); // Skip literal end symbol
 		return true;
 	}
+	*/
 }
 
+#if 0
 bool skipCtxHeadToNextValid(StrCTX& ctx)
 {
 	if (ctx.IsEnded())
@@ -272,8 +349,10 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 		ctx.Advance(COMMENT_ML_START_LENGTH);
 		if (!skipEntireMultiLineComment(ctx))
 		{
-			DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Could not correctly skip commented section (multiline comment).\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Could not correctly skip commented section (multiline comment).\n", ctx.lineNumber);
 		}
+
+		++ctx.numNeededCommentSubtitutions;
 
 		return skipCtxHeadToNextValid(ctx);
 	}
@@ -283,8 +362,10 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 		ctx.Advance(COMMENT_SL_LENGTH);
 		if (!skipEntireLine(ctx))
 		{
-			DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Could not correctly skip commented line (singleline comment).\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Could not correctly skip commented line (singleline comment).\n", ctx.lineNumber);
 		}
+
+		++ctx.numNeededCommentSubtitutions;
 
 		return skipCtxHeadToNextValid(ctx);
 	}
@@ -308,17 +389,151 @@ bool skipCtxHeadToNextValid(StrCTX& ctx)
 
 	return true;
 }
+#endif
+
+char LookChar(StrCTX& ctx, uint32_t ignoreField)
+{
+	DOGE_ASSERT_MESSAGE(!ctx.IsEnded(),
+		"Error at line %d. Could not consume char, unexpected EOL.\n", ctx.lineNumber); // An error for now, should be checked before consuming
+
+	if (!(ignoreField & IGNORE_ML_COMMENT) && isMultiLineCommentStart(ctx.HeadCStr()))
+	{
+		SubStrLoc mlCommentSubLoc = GetMultiLineCommentSubLoc(ctx);
+
+		if (bKeepComment)
+		{
+			ctx.SetHead(mlCommentSubLoc.m_end);
+			ctx.InsertHere(" ", false);
+		}
+		else
+		{
+			ctx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+		}
+
+		return ' '; // Default separator
+	}
+
+	if (!(ignoreField & IGNORE_SL_COMMENT) && isSingleLineCommentStart(ctx.HeadCStr()))
+	{
+		SubStrLoc mlCommentSubLoc = GetSingleLineCommentSubLoc(ctx);
+
+		if (bKeepComment)
+		{
+			ctx.SetHead(mlCommentSubLoc.m_end);
+		}
+		else
+		{
+			ctx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+		}
+
+		return ' '; // Default separator
+	}
+
+	StrSizeT lastLRLength;
+	if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1, &lastLRLength)) // Skip line break
+	{
+		ctx.Erase({ ctx.CurrentPos(), ctx.CurrentPos() + 1 + lastLRLength }, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+		return LookChar(ctx, ignoreField);
+	}
+
+	if ((ignoreField & INSIDE_LITERAL) && ctx.HeadChar() == '\\')
+	{
+		ctx.AdvanceHead();
+		ctx.AdvanceHead();
+
+		return LookChar(ctx, ignoreField);
+	}
+
+	if (ctx.HeadChar() == '\r')
+	{
+		ctx.AdvanceHead();
+		DOGE_ASSERT_MESSAGE(ctx.HeadChar() == '\n',
+			"Error at line %d. Unsupported single ControlReturn without following LineReturn symbol.\n", ctx.lineNumber);
+
+		return '\n';
+	}
+
+	return ctx.HeadChar();
+}
+
+char ConsumeChar(StrCTX& ctx, uint32_t ignoreField) 
+{
+	DOGE_ASSERT_MESSAGE(!ctx.IsEnded(), 
+		"Error at line %d. Could not consume char, unexpected EOL.\n", ctx.lineNumber); // An error for now, should be checked before consuming
+
+	if (!(ignoreField & IGNORE_ML_COMMENT) && isMultiLineCommentStart(ctx.HeadCStr()))
+	{
+		SubStrLoc mlCommentSubLoc = GetMultiLineCommentSubLoc(ctx);
+
+		if (bKeepComment)
+		{
+			ctx.SetHead(mlCommentSubLoc.m_end);
+		}
+		else
+		{
+			ctx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_END);
+		}
+
+		return ' '; // Default separator
+	}
+
+	if (!(ignoreField & IGNORE_SL_COMMENT) && isSingleLineCommentStart(ctx.HeadCStr()))
+	{
+		SubStrLoc mlCommentSubLoc = GetSingleLineCommentSubLoc(ctx);
+
+		if (bKeepComment)
+		{
+			ctx.SetHead(mlCommentSubLoc.m_end);
+		}
+		else
+		{
+			ctx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_END);
+		}
+
+		return ' '; // Default separator
+	}
+
+	StrSizeT lastLRLength;
+	if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1, &lastLRLength)) // Skip line break
+	{
+		ctx.Erase({ ctx.CurrentPos(), ctx.CurrentPos() + 1 + lastLRLength }, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+		return ConsumeChar(ctx);
+	}
+
+	if ((ignoreField & INSIDE_LITERAL) && ctx.HeadChar() == '\\')
+	{
+		ctx.AdvanceHead();
+		ctx.AdvanceHead();
+
+		return ConsumeChar(ctx, ignoreField);
+	}
+
+	if (ctx.HeadChar() == '\r')
+	{
+		ctx.AdvanceHead();
+		DOGE_ASSERT_MESSAGE(ctx.HeadChar() == '\n',
+			"Error at line %d. Unsupported single ControlReturn without following LineReturn symbol.\n", ctx.lineNumber);
+
+		ctx.AdvanceHead();
+		return '\n';
+	}
+
+	char consumedChar = ctx.HeadChar();
+	ctx.AdvanceHead();
+
+	return consumedChar;
+}
 
 bool advanceToNextLineExpectHSpaceOnly(StrCTX& ctx)
 {
 	char c;
-	while (!ctx.IsEnded() && ((c = pickNextChar(ctx)) != '\n'))
+	while (!ctx.IsEnded() && ((c = LookChar(ctx)) != '\n'))
 	{
 		if (!isHSpace(c))
 		{
 			return false; // Encountered non hspace character
 		}
-		ctx.Advance(1);
+		ConsumeChar(ctx);
 	}
 
 	if (ctx.IsEnded())
@@ -327,7 +542,7 @@ bool advanceToNextLineExpectHSpaceOnly(StrCTX& ctx)
 	}
 	else
 	{
-		ctx.Advance(1); // Skip EOL symbol
+		ConsumeChar(ctx); // Skip EOL symbol
 		return true;
 	}
 }
@@ -336,21 +551,21 @@ bool retrieveIdentifier(StrCTX& ctx, std::string& outStrId)
 {
 	outStrId.clear();
 
-	char c = pickNextChar(ctx);
+	char c = LookChar(ctx);
 	if (LUT_validIdFirstChar[c])
 	{
 		outStrId += c;
-		ctx.Advance(1);
+		ConsumeChar(ctx);
 	}
 	else
 	{
 		return false;
 	}
 
-	while (LUT_validIdBodyChar[(c = pickNextChar(ctx))])
+	while (LUT_validIdBodyChar[(c = LookChar(ctx))])
 	{
 		outStrId += c;
-		ctx.Advance(1);
+		ConsumeChar(ctx);
 	}
 
 	return true;
@@ -394,7 +609,7 @@ bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& out
 {
 	if (!ctx.bInLineStart)
 	{
-		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Character # can only happen at start of line content.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Character # can only happen at start of line content.\n", ctx.lineNumber);
 	}
 
 	StrSizeT directiveStartPos = ctx.CurrentPos();
@@ -406,7 +621,7 @@ bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& out
 	std::string strId;
 	if (!retrieveIdentifier(ctx, strId))
 	{
-		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Invalid identifier.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Invalid identifier.\n", ctx.lineNumber);
 	}
 
 	printf("Found # identifier #%s.\n", strId.c_str());
@@ -414,7 +629,7 @@ bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& out
 	EDirective eDirective = szNameToEnum<EDirective>(strId.c_str());
 	if (eDirective == e_directive_UNKNOWN)
 	{
-		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Unknown directive #%s.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber, strId.c_str());
+		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Unknown directive #%s.\n", ctx.lineNumber, strId.c_str());
 	}
 
 	outEDirective = eDirective;
@@ -426,20 +641,18 @@ bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& out
 bool getCharEnclosedString(StrCTX& ctx, char c_open, char c_close,
 	std::string& strOutEnclosed)
 {
-	if (pickNextChar(ctx) != c_open)
+	if (ConsumeChar(ctx) != c_open)
 	{
 		return false;
 	}
 
-	ctx.Advance(1);
-
 	strOutEnclosed.clear();
 
 	char c;
-	while (!ctx.IsEnded() && ((c = pickNextChar(ctx)) != c_close))
+	while (!ctx.IsEnded() && ((c = LookChar(ctx)) != c_close))
 	{
 		strOutEnclosed += c;
-		ctx.Advance(1);
+		ConsumeChar(ctx);
 	}
 
 	if (ctx.IsEnded())
@@ -447,15 +660,160 @@ bool getCharEnclosedString(StrCTX& ctx, char c_open, char c_close,
 		return false;
 	}
 
-	ctx.Advance(1);
+	ConsumeChar(ctx);
 
 	return true;
 }
 
+//char LookAheadSzOnce(const char* sz);
+//const char* AdvanceSzOnce(const char* sz);
 //
-// This method might seem redundant when pick next char already auto skip line breaks, but it allows for a faster string building (no more char by char)
+//const char* AdvanceSzOnce(const char* sz)
+//{
+//	if (!*sz)
+//	{
+//		DOGE_ASSERT_ALWAYS_MESSAGE("Unexpected EOL.\n");
+//	}
+//
+//	if (*sz == '\r')
+//	{
+//		DOGE_ASSERT_MESSAGE(*(sz + 1) == '\n', "Symbol ControlReturn can only be followed by a LineReturn symbol.\n");
+//		sz += 2;
+//	}
+//	else if (*sz == '\\' && LookAheadSzOnce(sz + 1) == '\n')
+//	{
+//		sz = AdvanceSzOnce(sz + 1);
+//	}
+//	
+//	if (isMultiLineCommentStart(ctx.HeadCStr()))
+//	{
+//		SubStrLoc mlCommentSubLoc = GetMultiLineCommentSubLoc(ctx);
+//
+//		if (bKeepComment)
+//		{
+//			ctx.SetHead(mlCommentSubLoc.m_end);
+//		}
+//		else
+//		{
+//			ctx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_END);
+//		}
+//
+//		return ' '; // Default separator
+//	}
+//
+//	if (isSingleLineCommentStart(ctx.HeadCStr()))
+//	{
+//		SubStrLoc mlCommentSubLoc = GetSingleLineCommentSubLoc(ctx);
+//
+//		if (bKeepComment)
+//		{
+//			ctx.SetHead(mlCommentSubLoc.m_end);
+//		}
+//		else
+//		{
+//			ctx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_END);
+//		}
+//
+//		return ' '; // Default separator
+//	}
+//}
+//
+//char LookAheadCtxOnce(StrCTX& ctx)
+//{
+//	if (ctx.IsEnded())
+//	{
+//		DOGE_ASSERT_ALWAYS_MESSAGE("Unexpected EOL.\n");
+//	}
+//
+//	if (ctx.HeadChar() == '\r')
+//	{
+//		ctx.AdvanceHead();
+//		DOGE_ASSERT_MESSAGE(ctx.HeadChar() == '\n', "Symbol ControlReturn can only be followed by a LineReturn symbol.\n");
+//
+//		return LookAheadSzOnce(sz);
+//	}
+//
+//	if (*sz == '\\' && LookAheadSzOnce(sz + 1) == '\n')
+//	{
+//		sz = AdvanceSzOnce(sz);
+//
+//		return LookAheadSzOnce(sz);
+//	}
+//}
+//
+//char LookAheadSzOnce(const char* sz)
+//{
+//	if (!*sz)
+//	{
+//		DOGE_ASSERT_ALWAYS_MESSAGE("Unexpected EOL.\n");
+//	}
+//
+//	if (*sz == '\r')
+//	{
+//		DOGE_ASSERT_MESSAGE(*(sz + 1) == '\n', "Symbol ControlReturn can only be followed by a LineReturn symbol.\n");
+//		++sz;
+//
+//		return LookAheadSzOnce(sz);
+//	}
+//
+//	if (*sz == '\\' && LookAheadSzOnce(sz + 1) == '\n')
+//	{
+//		sz = AdvanceSzOnce(sz);
+//
+//		return LookAheadSzOnce(sz);
+//	}
+//}
+
+SubStrLoc GetSubLocUntilChar(StrCTX& ctx, char c, uint32_t ignoreField)
+{
+	SubStrLoc subLocUntil;
+	subLocUntil.m_start = ctx.CurrentPos();
+
+	char cdebug;
+	while ((cdebug = ConsumeChar(ctx, ignoreField)) != c)
+	{
+		int breakpoint = -1;
+	}
+
+	subLocUntil.m_end = ctx.CurrentPos();
+
+	ctx.SetHead(subLocUntil.m_start);
+
+	return subLocUntil;
+}
+
+SubStrLoc GetSubLocUntilSz(StrCTX& ctx, const char* sz, uint32_t ignoreField)
+{
+	SubStrLoc subLocUntil;
+	subLocUntil.m_start = ctx.CurrentPos();
+
+	StrSizeT szLen = strlen(sz);
+	while (!szEqN(ctx.HeadCStr(), sz, szLen))
+	{
+		ConsumeChar(ctx, ignoreField);
+	}
+	ctx.SetHead(ctx.CurrentPos() + szLen);
+
+	subLocUntil.m_end = ctx.CurrentPos();
+
+	ctx.SetHead(subLocUntil.m_start);
+
+	return subLocUntil;
+}
+
+//
+// This method might seem redundant when pick next char already auto skipping line breaks, but it allows for a faster string building (no more char by char)
 bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent)
 {
+	SubStrLoc mlContentSubLoc = GetSubLocUntilChar(ctx, '\n', 0);
+
+	strMultiLineContent = mlContentSubLoc.ExtractSubStr(ctx.baseStr);
+
+	ctx.SetHead(mlContentSubLoc.m_end);
+
+	return true;
+
+	/*
 	StrCItT itMultiLineContentPartStart = ctx.head;
 	StrCItT itMultiLineContentPartEnd;
 
@@ -485,11 +843,12 @@ bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent)
 	strMultiLineContent.append(itMultiLineContentPartStart, itMultiLineContentPartEnd);
 
 	return true;
+	*/
 }
 
 bool handleDirectiveContent_Include(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(pickNextChar(ctx)))
+	if (!isHSpace(LookChar(ctx)))
 	{
 		return false;
 	}
@@ -501,13 +860,14 @@ bool handleDirectiveContent_Include(StrCTX& ctx, StrSizeT directiveStartPos)
 
 	bool bIsSytemInclude;
 
-	if (pickNextChar(ctx) == '"')
+	char c = LookChar(ctx);
+	if (c == '"')
 	{
 		enclosing_c_open = '"';
 		enclosing_c_close = '"';
 		bIsSytemInclude = false;
 	}
-	else if (pickNextChar(ctx) == '<')
+	else if (c == '<')
 	{
 		enclosing_c_open = '<';
 		enclosing_c_close = '>';
@@ -610,7 +970,7 @@ bool decomposeStringCleanHSpaces(const std::string& strIn, char sep, std::vector
 
 bool parseFunctionMacroDefinition(StrCTX& ctx, Macro& outFnMacro)
 {
-	if (!(pickNextChar(ctx) == '('))
+	if (!(LookChar(ctx) == '('))
 	{
 		return false; // Args declaration needs opening parenthesis
 	}
@@ -702,7 +1062,7 @@ bool parseFunctionMacroDefinition(StrCTX& ctx, Macro& outFnMacro)
 
 bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(pickNextChar(ctx)))
+	if (!isHSpace(LookChar(ctx)))
 	{
 		return false;
 	}
@@ -718,7 +1078,7 @@ bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 	Macro macro;
 	macro.m_name = strDefine;
 
-	char c = pickNextChar(ctx);
+	char c = LookChar(ctx);
 	if (c == '(')
 	{
 		macro.m_eType = e_macrotype_function;
@@ -742,7 +1102,7 @@ bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 
 		skipHSpaces(ctx);
 
-		if (pickNextChar(ctx) == '\n')
+		if (LookChar(ctx) == '\n')
 		{
 			macro.m_strContent.clear(); // simple define with no content
 		}
@@ -770,7 +1130,7 @@ bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Undef(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(pickNextChar(ctx)))
+	if (!isHSpace(LookChar(ctx)))
 	{
 		return false;
 	}
@@ -818,7 +1178,7 @@ bool handleDirectiveContent_Pragma(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_If(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(pickNextChar(ctx)))
+	if (!isHSpace(LookChar(ctx)))
 	{
 		return false;
 	}
@@ -854,7 +1214,7 @@ bool handleDirectiveContent_If(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Ifdef(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(pickNextChar(ctx)))
+	if (!isHSpace(LookChar(ctx)))
 	{
 		return false;
 	}
@@ -890,7 +1250,7 @@ bool handleDirectiveContent_Ifdef(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Ifndef(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(pickNextChar(ctx)))
+	if (!isHSpace(LookChar(ctx)))
 	{
 		return false;
 	}
@@ -926,7 +1286,7 @@ bool handleDirectiveContent_Ifndef(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(pickNextChar(ctx)))
+	if (!isHSpace(LookChar(ctx)))
 	{
 		return false;
 	}
@@ -1035,31 +1395,18 @@ void preprocess_file_string(std::string& strBuffer)
 
 	while (!ctx.IsEnded())
 	{
-		char c = pickNextChar(ctx);
-		if (c == ' ')
+		char c = LookChar(ctx);
+		if (isHSpace(c))
 		{
-			ctx.Advance(1);
-
-			++ctx.charNumber;
-			++ctx.colNumber;
-		}
-		else if (c == '\t')
-		{
-			ctx.Advance(1);
-
-			++ctx.charNumber;
-			ctx.colNumber += 4;
+			ConsumeChar(ctx);
 		}
 		else if (c == '\n')
 		{
 			printf("Line return at line %d.\n", ctx.lineNumber);
 
-			ctx.Advance(1);
+			ConsumeChar(ctx);
 
 			++ctx.lineNumber;
-
-			ctx.charNumber = 1;
-			ctx.colNumber = 1;
 		}
 		else if (c == '#') {
 			StrSizeT directiveStartPos;
@@ -1071,20 +1418,20 @@ void preprocess_file_string(std::string& strBuffer)
 
 			if (!handleDirectiveContent(ctx, eDirective, directiveStartPos))
 			{
-				DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d char %d col %d. Invalid directive content.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+				DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Invalid directive content.\n", ctx.lineNumber);
 			}
 		}
 		else if (isLiteralDelimiterChar(c))
 		{
-			ctx.Advance(1);
-			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d char %d col %d. Invalid literal termination.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			ConsumeChar(ctx);
+			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d. Invalid literal termination.\n", ctx.lineNumber);
 		}
 		else if (LUT_validIdFirstChar[c])
 		{
 			std::string strId;
 			SubStrLoc idSubLoc;
 			idSubLoc.m_start = ctx.CurrentPos();
-			DOGE_ASSERT_MESSAGE(retrieveIdentifier(ctx, strId), "Error at line %d char %d col %d. Could not retrieve identifier.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			DOGE_ASSERT_MESSAGE(retrieveIdentifier(ctx, strId), "Error at line %d. Could not retrieve identifier.\n", ctx.lineNumber);
 			g_encounteredIdentifiers.push_back(strId);
 			idSubLoc.m_end = ctx.CurrentPos();
 
@@ -1116,10 +1463,7 @@ void preprocess_file_string(std::string& strBuffer)
 		}
 		else
 		{
-			ctx.Advance(1);
-
-			++ctx.charNumber;
-			++ctx.colNumber;
+			ConsumeChar(ctx);
 		}
 	}
 }
@@ -1130,43 +1474,30 @@ void preprocess_if_directive_string(std::string& strBuffer)
 
 	while (!ctx.IsEnded())
 	{
-		char c = pickNextChar(ctx);
-		if (c == ' ')
+		char c = LookChar(ctx);
+		if (isHSpace(c))
 		{
-			ctx.Advance(1);
-
-			++ctx.charNumber;
-			++ctx.colNumber;
-		}
-		else if (c == '\t')
-		{
-			ctx.Advance(1);
-
-			++ctx.charNumber;
-			ctx.colNumber += 4;
+			ConsumeChar(ctx);
 		}
 		else if (c == '\n')
 		{
 			printf("Line return at line %d.\n", ctx.lineNumber);
 
-			ctx.Advance(1);
+			ConsumeChar(ctx);
 
 			++ctx.lineNumber;
-
-			ctx.charNumber = 1;
-			ctx.colNumber = 1;
 		}
 		else if (isLiteralDelimiterChar(c))
 		{
-			ctx.Advance(1);
-			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d char %d col %d. Invalid literal termination.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			ConsumeChar(ctx);
+			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d. Invalid literal termination.\n", ctx.lineNumber);
 		}
 		else if (LUT_validIdFirstChar[c])
 		{
 			std::string strId;
 			SubStrLoc idSubLoc;
 			idSubLoc.m_start = ctx.CurrentPos();
-			DOGE_ASSERT_MESSAGE(retrieveIdentifier(ctx, strId), "Error at line %d char %d col %d. Could not retrieve identifier.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			DOGE_ASSERT_MESSAGE(retrieveIdentifier(ctx, strId), "Error at line %d. Could not retrieve identifier.\n", ctx.lineNumber);
 			g_encounteredIdentifiers.push_back(strId);
 			idSubLoc.m_end = ctx.CurrentPos();
 
@@ -1205,10 +1536,7 @@ void preprocess_if_directive_string(std::string& strBuffer)
 		}
 		else
 		{
-			ctx.Advance(1);
-
-			++ctx.charNumber;
-			++ctx.colNumber;
+			ConsumeChar(ctx);
 		}
 	}
 }
@@ -1247,7 +1575,7 @@ std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 
 	while (!expStrCtx.IsEnded())
 	{
-		char c = pickNextChar(expStrCtx);
+		char c = LookChar(expStrCtx);
 
 		if (c == '\n')
 		{
@@ -1255,21 +1583,21 @@ std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 		}
 		else if (isHSpace(c))
 		{
-			expStrCtx.AdvanceHead();
+			ConsumeChar(expStrCtx);
 		}
 		else if (isDigit(c))
 		{
 			StrSizeT numberStartPos = expStrCtx.CurrentPos();
-			expStrCtx.AdvanceHead();
-			while (!expStrCtx.IsEnded() && isValidInNumberChar(pickNextChar(expStrCtx)))
+			ConsumeChar(expStrCtx);
+			while (!expStrCtx.IsEnded() && isValidInNumberChar(LookChar(expStrCtx)))
 			{
-				expStrCtx.AdvanceHead();
+				ConsumeChar(expStrCtx);
 			}
 			StrSizeT numberEndPos = expStrCtx.CurrentPos();
 			StrSizeT suffixStartPos = expStrCtx.CurrentPos();
-			while (!expStrCtx.IsEnded() && LUT_validIdBodyChar[pickNextChar(expStrCtx)])
+			while (!expStrCtx.IsEnded() && LUT_validIdBodyChar[LookChar(expStrCtx)])
 			{
-				expStrCtx.AdvanceHead();
+				ConsumeChar(expStrCtx);
 			}
 			StrSizeT suffixEndPos = expStrCtx.CurrentPos();
 
@@ -1286,10 +1614,10 @@ std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 		else if (LUT_validIdFirstChar[c])
 		{
 			StrSizeT idStartPos = expStrCtx.CurrentPos();
-			expStrCtx.AdvanceHead();
-			while (!expStrCtx.IsEnded() && LUT_validIdFirstChar[pickNextChar(expStrCtx)])
+			ConsumeChar(expStrCtx);
+			while (!expStrCtx.IsEnded() && LUT_validIdFirstChar[LookChar(expStrCtx)])
 			{
-				expStrCtx.AdvanceHead();
+				ConsumeChar(expStrCtx);
 			}
 			StrSizeT idEndPos = expStrCtx.CurrentPos();
 
@@ -1318,20 +1646,20 @@ std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 
 			vParsedTokens.push_back({ eOperator, "" });
 
-			expStrCtx.AdvanceHead();
+			ConsumeChar(expStrCtx);
 		}
 		else if (CArrayIsPresent(doubleMaybeCharSymbol, DOGE_ARRAY_SIZE(doubleMaybeCharSymbol), c))
 		{
 			StrSizeT doubleCharOpStartPos = expStrCtx.CurrentPos();
 
-			expStrCtx.AdvanceHead();
+			ConsumeChar(expStrCtx);
 
 			// Handcrafted one symbol "lookahead" for those modest needs
 			if (!expStrCtx.IsEnded() &&
-				CArrayIsPresent(doubleOnlyCharSecondSymbol, DOGE_ARRAY_SIZE(doubleOnlyCharSecondSymbol), pickNextChar(expStrCtx)))
+				CArrayIsPresent(doubleOnlyCharSecondSymbol, DOGE_ARRAY_SIZE(doubleOnlyCharSecondSymbol), LookChar(expStrCtx)))
 			{
-				StrSizeT doubleEndOpStartPos = expStrCtx.CurrentPos() + 1;
-				SubStrLoc doubleCharOpSubLoc{ doubleCharOpStartPos, doubleEndOpStartPos };
+				StrSizeT doubleCharOpEndPos = expStrCtx.CurrentPos() + 1;
+				SubStrLoc doubleCharOpSubLoc{ doubleCharOpStartPos, doubleCharOpEndPos };
 
 				ETokenType eOperator;
 				expStrCtx.ExecWithTmpSzSubCStr(doubleCharOpSubLoc, [&](const char* sz) {
@@ -1341,7 +1669,7 @@ std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 
 				vParsedTokens.push_back({ eOperator, "" });
 
-				expStrCtx.AdvanceHead();
+				ConsumeChar(expStrCtx);
 			}
 			else
 			{

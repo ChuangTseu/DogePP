@@ -35,8 +35,8 @@ struct StrCTX {
 
 	bool bInLineStart = true;
 	int lineNumber = 1;
-	int charNumber = 1;
-	int colNumber = 1;
+
+	int numNeededCommentSubtitutions = 0;
 
 	std::vector<SubStrLoc*> vRegisteredSubLocs;
 	std::vector<StrSizeT*> vRegisteredPositions;
@@ -50,6 +50,10 @@ struct StrCTX {
 		if (bAdvanceAfterInserted)
 		{
 			SetHead(insertPos + str.length());
+		}
+		else
+		{
+			SetHead(insertPos);
 		}
 	}
 

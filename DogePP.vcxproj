@@ -78,30 +78,40 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BaseParser.cpp" />
     <ClCompile Include="CharUtils.cpp" />
     <ClCompile Include="Config.cpp" />
     <ClCompile Include="DogePP.cpp" />
     <ClCompile Include="ErrorLogging.cpp" />
     <ClCompile Include="ExpParser.cpp" />
+    <ClCompile Include="Expressions.cpp" />
     <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="Macro.cpp" />
     <ClCompile Include="Match.cpp" />
+    <ClCompile Include="Parselets.cpp" />
+    <ClCompile Include="Precedence.cpp" />
     <ClCompile Include="PreProcessorUtils.cpp" />
     <ClCompile Include="StringContext.cpp" />
     <ClCompile Include="StringUtils.cpp" />
+    <ClCompile Include="Tokens.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BaseParser.h" />
     <ClInclude Include="CharUtils.h" />
     <ClInclude Include="Config.h" />
     <ClInclude Include="EnumCTTI.h" />
     <ClInclude Include="ErrorLogging.h" />
     <ClInclude Include="ExpParser.h" />
+    <ClInclude Include="Expressions.h" />
     <ClInclude Include="FileUtils.h" />
     <ClInclude Include="Macro.h" />
     <ClInclude Include="Match.h" />
+    <ClInclude Include="Parselets.h" />
+    <ClInclude Include="Precedence.h" />
     <ClInclude Include="PreProcessorUtils.h" />
     <ClInclude Include="StringContext.h" />
     <ClInclude Include="StringUtils.h" />
+    <ClInclude Include="Tokens.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

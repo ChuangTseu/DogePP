@@ -1,11 +1,14 @@
-#include "ExpParser.h"
+#include "MacroExpParser.h"
 
-ExpParser::ExpParser(TokenCIt tokenIt) : Parser(tokenIt)
+MacroExpParser::MacroExpParser(TokenCIt tokenIt) : Parser(tokenIt)
 {
+	Register(ETokenType::NAME, std::make_unique<NameParselet>());
 	Register(ETokenType::NUMBER, std::make_unique<NumberParselet>());
 	Register(ETokenType::QUESTION, std::make_unique<ConditionalParselet>());
 	Register(ETokenType::LEFT_PAREN, std::make_unique<GroupParselet>());
-	Register(ETokenType::LEFT_PAREN, std::make_unique<CallParselet>());
+
+	// Custom "hacky" defined(id) parselet
+	Register(ETokenType::DEFINED, std::make_unique<DefinedCallParselet>());
 
 	// Register the simple operator parselets.
 
@@ -45,26 +48,26 @@ ExpParser::ExpParser(TokenCIt tokenIt) : Parser(tokenIt)
 	InfixLeft(ETokenType::OR, GetOperatorInfixPrecedence(ETokenType::OR));
 }
 
-ExpParser::~ExpParser()
+MacroExpParser::~MacroExpParser()
 {
 }
 
-void ExpParser::Postfix(ETokenType eTokenType, int precedence)
+void MacroExpParser::Postfix(ETokenType eTokenType, int precedence)
 {
 	Register(eTokenType, std::make_unique<PostfixOperatorParselet>(precedence));
 }
 
-void ExpParser::Prefix(ETokenType eTokenType, int precedence)
+void MacroExpParser::Prefix(ETokenType eTokenType, int precedence)
 {
 	Register(eTokenType, std::make_unique<PrefixOperatorParselet>(precedence));
 }
 
-void ExpParser::InfixLeft(ETokenType eTokenType, int precedence)
+void MacroExpParser::InfixLeft(ETokenType eTokenType, int precedence)
 {
 	Register(eTokenType, std::make_unique<BinaryOperatorParselet>(precedence, false));
 }
 
-void ExpParser::InfixRight(ETokenType eTokenType, int precedence)
+void MacroExpParser::InfixRight(ETokenType eTokenType, int precedence)
 {
 	Register(eTokenType, std::make_unique<BinaryOperatorParselet>(precedence, true));
 }

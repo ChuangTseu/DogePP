@@ -42,6 +42,20 @@ private:
 	std::vector<std::unique_ptr<const Expression>> m_args;
 };
 
+class DefinedCallExpression : public Expression {
+public:
+	DefinedCallExpression(std::string strId) :
+		m_strId(strId)
+	{
+	}
+
+	std::string GetStringExpression() const;
+	int Evaluate() const;
+
+private:
+	std::string m_strId;
+};
+
 class ConditionalExpression : public Expression {
 public:
 	ConditionalExpression(std::unique_ptr<const Expression> condition, std::unique_ptr<const Expression> thenArm,
@@ -57,6 +71,21 @@ private:
 	std::unique_ptr<const Expression> m_condition;
 	std::unique_ptr<const Expression> m_thenArm;
 	std::unique_ptr<const Expression> m_elseArm;
+};
+
+class NameExpression : public Expression {
+public:
+	NameExpression(const std::string& name) {
+		m_name = name;
+	}
+
+	std::string GetName() { return m_name; }
+
+	std::string GetStringExpression() const;
+	int Evaluate() const;
+
+private:
+	std::string m_name;
 };
 
 class NumberExpression : public Expression {

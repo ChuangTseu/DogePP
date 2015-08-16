@@ -135,6 +135,15 @@ int valid;
 	#else
 		char Valid_Else_Expression = !!else !!whatever;
 	#endif
+
+	//#define JEAN_FRANCIS
+
+	#if defined(JEAN_FRANCIS)
+		char Valid_If_Defined_JEAN_FRANCIS = TRUE;
+	#else
+		char Not_Valid_If_Defined_JEAN_FRANCIS = FALSE;
+	#endif
+
 }
 
 

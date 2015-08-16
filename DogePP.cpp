@@ -26,7 +26,7 @@
 #include "CharUtils.h"
 #include "Match.h"
 #include "ErrorLogging.h"
-#include "ExpParser.h"
+#include "MacroExpParser.h"
 
 #define VEC_SIZE_T(vec) decltype(vec.size())
 
@@ -84,7 +84,8 @@ DECLARE_ENUM_TEMPLATE_CTTI(EDirective)
 
 
 bool skipCtxHeadToNextValid(StrCTX& ctx);
-void process_string(std::string& strBuffer, bool bHandlePreprocessorDirectives = true);
+void preprocess_file_string(std::string& strBuffer);
+void preprocess_if_directive_string(std::string& strBuffer);
 bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& outDirectiveStartPos);
 std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp);
 
@@ -131,6 +132,70 @@ char pickNextChar(StrCTX& ctx)
 	DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
 	return ctx.HeadChar();
 	return c;
+}
+
+void skipHSpaces(StrCTX& ctx)
+{
+	while (isHSpace(pickNextChar(ctx)))
+	{
+		ctx.Advance(1);
+	}
+}
+
+bool skipMultiScopeCharEnclosed(StrCTX& ctx, char c_open, char c_close)
+{
+	DOGE_ASSERT_MESSAGE(c_open != c_close, "Error. Cannot handle multiple scopes when opening and closing sequence are the same.\n");
+
+	if (ctx.IsEnded())
+	{
+		return false;
+	}
+
+	skipHSpaces(ctx);
+
+	if (ctx.IsEnded())
+	{
+		return false;
+	}
+
+	int pileCount = 0;
+
+	if (pickNextChar(ctx) != c_open)
+	{
+		return false;
+	}
+
+	++pileCount;
+
+	while (!ctx.IsEnded())
+	{
+		char c = pickNextChar(ctx);
+
+		if (c == '\n')
+		{
+			return false;
+		}
+
+		if (c == c_open) {
+			++pileCount;
+		}
+		else if (c == c_close)
+		{
+			--pileCount;
+		}
+		else {
+
+		}
+
+		ctx.AdvanceHead();
+
+		if (pileCount == 0)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool advanceToNextConditionDirective(StrCTX& ctx)
@@ -264,14 +329,6 @@ bool advanceToNextLineExpectHSpaceOnly(StrCTX& ctx)
 	{
 		ctx.Advance(1); // Skip EOL symbol
 		return true;
-	}
-}
-
-void skipHSpaces(StrCTX& ctx)
-{
-	while (isHSpace(pickNextChar(ctx)))
-	{
-		ctx.Advance(1);
 	}
 }
 
@@ -774,7 +831,7 @@ bool handleDirectiveContent_If(StrCTX& ctx, StrSizeT directiveStartPos)
 		return false;
 	}
 
-	process_string(strMultilineContent, false);
+	preprocess_if_directive_string(strMultilineContent);
 
 	std::unique_ptr<const Expression> expression = EvaluateStringExpression(strMultilineContent);
 	bool bYieldedValue = expression->Evaluate() ? true : false;
@@ -882,7 +939,7 @@ bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 		return false;
 	}
 
-	process_string(strMultilineContent, false);
+	preprocess_if_directive_string(strMultilineContent);
 
 	std::unique_ptr<const Expression> expression = EvaluateStringExpression(strMultilineContent);
 	bool bYieldedValue = expression->Evaluate() ? true : false;
@@ -972,7 +1029,7 @@ bool handleDirectiveContent(StrCTX& ctx, EDirective eDirective, StrSizeT directi
 
 std::vector<std::string> g_encounteredIdentifiers;
 
-void process_string(std::string& strBuffer, bool bHandlePreprocessorDirectives)
+void preprocess_file_string(std::string& strBuffer)
 {
 	StrCTX ctx{ strBuffer, strBuffer.cbegin() };
 
@@ -1004,7 +1061,7 @@ void process_string(std::string& strBuffer, bool bHandlePreprocessorDirectives)
 			ctx.charNumber = 1;
 			ctx.colNumber = 1;
 		}
-		else if (bHandlePreprocessorDirectives && c == '#') {
+		else if (c == '#') {
 			StrSizeT directiveStartPos;
 			EDirective eDirective;
 			if (!retrieveDirectiveType(ctx, eDirective, directiveStartPos))
@@ -1054,6 +1111,95 @@ void process_string(std::string& strBuffer, bool bHandlePreprocessorDirectives)
 
 					ctx.SetHead(idSubLoc.m_start);
 					ctx.Replace(idSubLoc, strFnMacroPatchedContent, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+				}
+			}
+		}
+		else
+		{
+			ctx.Advance(1);
+
+			++ctx.charNumber;
+			++ctx.colNumber;
+		}
+	}
+}
+
+void preprocess_if_directive_string(std::string& strBuffer)
+{
+	StrCTX ctx{ strBuffer, strBuffer.cbegin() };
+
+	while (!ctx.IsEnded())
+	{
+		char c = pickNextChar(ctx);
+		if (c == ' ')
+		{
+			ctx.Advance(1);
+
+			++ctx.charNumber;
+			++ctx.colNumber;
+		}
+		else if (c == '\t')
+		{
+			ctx.Advance(1);
+
+			++ctx.charNumber;
+			ctx.colNumber += 4;
+		}
+		else if (c == '\n')
+		{
+			printf("Line return at line %d.\n", ctx.lineNumber);
+
+			ctx.Advance(1);
+
+			++ctx.lineNumber;
+
+			ctx.charNumber = 1;
+			ctx.colNumber = 1;
+		}
+		else if (isLiteralDelimiterChar(c))
+		{
+			ctx.Advance(1);
+			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d char %d col %d. Invalid literal termination.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+		}
+		else if (LUT_validIdFirstChar[c])
+		{
+			std::string strId;
+			SubStrLoc idSubLoc;
+			idSubLoc.m_start = ctx.CurrentPos();
+			DOGE_ASSERT_MESSAGE(retrieveIdentifier(ctx, strId), "Error at line %d char %d col %d. Could not retrieve identifier.\n", ctx.lineNumber, ctx.charNumber, ctx.colNumber);
+			g_encounteredIdentifiers.push_back(strId);
+			idSubLoc.m_end = ctx.CurrentPos();
+
+			if (strId == "defined")
+			{
+				skipMultiScopeCharEnclosed(ctx, '(', ')'); // We don't want the content to be altered inside the defined(...)
+			}
+			else
+			{
+				if (gMacroIsDefined(strId))
+				{
+					const Macro& macro = gMacroGet(strId);
+
+					if (macro.m_eType == e_macrotype_definition) // Todo : support functions macro
+					{
+						ctx.SetHead(idSubLoc.m_start);
+						ctx.Replace(idSubLoc, macro.m_strContent, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+					}
+					else
+					{
+						std::string strMacroArgs;
+						DOGE_ASSERT(getCharEnclosedString(ctx, '(', ')', strMacroArgs));
+						std::vector<std::string> vStrArgs;
+						decomposeStringCleanHSpaces(strMacroArgs, ',', vStrArgs);
+
+						std::string strFnMacroPatchedContent;
+						macro.PatchString(vStrArgs, strFnMacroPatchedContent);
+
+						idSubLoc.m_end = ctx.CurrentPos();
+
+						ctx.SetHead(idSubLoc.m_start);
+						ctx.Replace(idSubLoc, strFnMacroPatchedContent, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+					}
 				}
 			}
 		}
@@ -1137,6 +1283,34 @@ std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 			Token numberToken{ ETokenType::NUMBER, fullNumberSubLoc.ExtractSubStr(expStrCtx.baseStr) };
 			vParsedTokens.push_back(numberToken);
 		}
+		else if (LUT_validIdFirstChar[c])
+		{
+			StrSizeT idStartPos = expStrCtx.CurrentPos();
+			expStrCtx.AdvanceHead();
+			while (!expStrCtx.IsEnded() && LUT_validIdFirstChar[pickNextChar(expStrCtx)])
+			{
+				expStrCtx.AdvanceHead();
+			}
+			StrSizeT idEndPos = expStrCtx.CurrentPos();
+
+			SubStrLoc idSubLoc{ idStartPos, idEndPos };
+			
+			bool isDefinedFnCall;
+			expStrCtx.ExecWithTmpSzSubCStr(idSubLoc, [&](const char* sz) {
+				isDefinedFnCall = szEq("defined", sz);
+			});
+
+			if (isDefinedFnCall)
+			{
+				Token defineToken{ ETokenType::DEFINED, "" };
+				vParsedTokens.push_back(defineToken);
+			}
+			else
+			{
+				Token nameToken{ ETokenType::NAME, idSubLoc.ExtractSubStr(expStrCtx.baseStr) };
+				vParsedTokens.push_back(nameToken);
+			}
+		}
 		else if (CArrayIsPresent(singleOnlyCharSymbol, DOGE_ARRAY_SIZE(singleOnlyCharSymbol), c))
 		{
 			ETokenType eOperator = ETokenTypeFromSingleCharOperator(CharAsCStr(c));
@@ -1185,7 +1359,7 @@ std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 
 	vParsedTokens.push_back({ ETokenType::EOL, "" });
 
-	ExpParser expParser(vParsedTokens.cbegin());
+	MacroExpParser expParser(vParsedTokens.cbegin());
 	std::unique_ptr<const Expression> result = expParser.ParseExpression();
 
 	return result;
@@ -1207,7 +1381,7 @@ int main(int argc, char* argv[])
 
 	std::string strFile;
 	DOGE_ASSERT(readFileToString("testfile.txt", strFile));
-	process_string(strFile);
+	preprocess_file_string(strFile);
 
 	std::cout << "===================== BOF =====================\n";
 	std::cout << strFile;

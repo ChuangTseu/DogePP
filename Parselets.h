@@ -20,6 +20,21 @@ public:
 	virtual int GetPrecedence() const = 0;
 };
 
+class DefinedCallParselet : public PrefixParselet {
+	std::unique_ptr<const Expression> Parse(Parser& parser, const Token& token) const
+	{
+		parser.ConsumeExpected(ETokenType::LEFT_PAREN);
+		Token idToken = parser.ConsumeExpected(ETokenType::NAME);
+		parser.ConsumeExpected(ETokenType::RIGHT_PAREN);
+
+		return std::make_unique<DefinedCallExpression>(idToken.m_text);
+	}
+
+	int GetPrecedence() const {
+		return HIGHEST_PRECEDENCE;
+	}
+};
+
 class CallParselet : public InfixParselet {
 	std::unique_ptr<const Expression> Parse(Parser& parser, std::unique_ptr<const Expression> left, const Token& token) const
 	{
@@ -92,6 +107,14 @@ public:
 		std::unique_ptr<const Expression> expression = parser.ParseExpression();
 		parser.ConsumeExpected(ETokenType::RIGHT_PAREN);
 		return expression;
+	}
+};
+
+class NameParselet : public PrefixParselet {
+public:
+	std::unique_ptr<const Expression> Parse(Parser& parser, const Token& token) const
+	{
+		return std::make_unique<NameExpression>(token.m_text);
 	}
 };
 

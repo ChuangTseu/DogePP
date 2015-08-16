@@ -2,9 +2,16 @@
 
 #include <map>
 
+#include "Macro.h"
+
 std::string OperatorExpression::GetStringExpression() const
 {
 	return "( " + m_left->GetStringExpression() + " " + LUT_ETokenType_OperatorChar[EASINT(m_eOperator)] + " " + m_right->GetStringExpression() + " )";
+}
+
+std::string DefinedCallExpression::GetStringExpression() const
+{
+	return "defined(" + m_strId + ")";
 }
 
 std::string CallExpression::GetStringExpression() const
@@ -25,6 +32,11 @@ std::string CallExpression::GetStringExpression() const
 std::string ConditionalExpression::GetStringExpression() const
 {
 	return "( " + m_condition->GetStringExpression() + " ? " + m_thenArm->GetStringExpression() + " : " + m_elseArm->GetStringExpression() + " )";
+}
+
+std::string NameExpression::GetStringExpression() const
+{
+	return m_name;
 }
 
 std::string NumberExpression::GetStringExpression() const
@@ -125,15 +137,35 @@ int OperatorExpression::Evaluate() const
 	return StdMap_MandatoryGet(intBinaryOpsMap, m_eOperator)(m_left->Evaluate(), m_right->Evaluate());
 }
 
+//class ExpType {
+//	enum EType {
+//		e_integer,
+//		e_unsigned_int,
+//	};
+//};
+
+int DefinedCallExpression::Evaluate() const
+{
+	return gMacroIsDefined(m_strId) ? 1 : 0;
+}
+
 int CallExpression::Evaluate() const
 {
 	return 0;
-	//return m_args.front()->Evaluate(); // TODO Do this correctly
+	//TODO
 }
 
 int ConditionalExpression::Evaluate() const
 {
 	return m_condition->Evaluate() ? m_thenArm->Evaluate() : m_elseArm->Evaluate();
+}
+
+int NameExpression::Evaluate() const
+{
+	return 0; /* 
+		If we got a name, it is either a function call which won't reach this far (= not being seen as name) or 
+		a not found macro that follows the default behavior exposed here : https://gcc.gnu.org/onlinedocs/cpp/If.html (i.e. returns 0) 
+	*/
 }
 
 int NumberExpression::Evaluate() const

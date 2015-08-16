@@ -83,7 +83,7 @@
     <ClCompile Include="Config.cpp" />
     <ClCompile Include="DogePP.cpp" />
     <ClCompile Include="ErrorLogging.cpp" />
-    <ClCompile Include="ExpParser.cpp" />
+    <ClCompile Include="MacroExpParser.cpp" />
     <ClCompile Include="Expressions.cpp" />
     <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="Macro.cpp" />
@@ -101,7 +101,7 @@
     <ClInclude Include="Config.h" />
     <ClInclude Include="EnumCTTI.h" />
     <ClInclude Include="ErrorLogging.h" />
-    <ClInclude Include="ExpParser.h" />
+    <ClInclude Include="MacroExpParser.h" />
     <ClInclude Include="Expressions.h" />
     <ClInclude Include="FileUtils.h" />
     <ClInclude Include="Macro.h" />

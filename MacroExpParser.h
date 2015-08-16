@@ -17,11 +17,11 @@
 #include "Parselets.h"
 #include "BaseParser.h"
 
-class ExpParser : public Parser
+class MacroExpParser : public Parser
 {
 public:
-	ExpParser(TokenCIt tokenIt);
-	~ExpParser();
+	MacroExpParser(TokenCIt tokenIt);
+	~MacroExpParser();
 
 	void Postfix(ETokenType eTokenType, int precedence);
 	void Prefix(ETokenType eTokenType, int precedence);

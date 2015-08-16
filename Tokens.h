@@ -39,6 +39,7 @@
 #define X_LIST_OF_OtherType_ETokenType \
 	X4(NUMBER		, ""	,	-1	,	-1	) \
 	X4(NAME			, ""	,	-1	,	-1	) \
+	X4(DEFINED		, ""	,	-1	,	-1	) \
 	X4(EOL			, ""	,	-1	,	-1	)
 
 enum class ETokenType {

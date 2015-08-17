@@ -19,3 +19,16 @@ bool readFileToString(const char* szFileName, std::string& outStr)
 
 	return true;
 }
+
+bool writeStringToFile(const char* szFileName, const std::string& inStr)
+{
+	std::ofstream outFile(szFileName, std::ifstream::binary);
+	if (!outFile)
+	{
+		return false;
+	}
+
+	outFile.write(inStr.c_str(), inStr.length());
+
+	return true;
+}

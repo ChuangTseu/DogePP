@@ -23,10 +23,19 @@ public:
 class DefinedCallParselet : public PrefixParselet {
 	std::unique_ptr<const Expression> Parse(Parser& parser, const Token& token) const
 	{
-		parser.ConsumeExpected(ETokenType::LEFT_PAREN);
-		Token idToken = parser.ConsumeExpected(ETokenType::NAME);
-		parser.ConsumeExpected(ETokenType::RIGHT_PAREN);
+		Token idToken;
 
+		if (parser.Match(ETokenType::NAME))
+		{
+			idToken = parser.ConsumeExpected(ETokenType::NAME);
+		}
+		else
+		{
+			parser.ConsumeExpected(ETokenType::LEFT_PAREN);
+			idToken = parser.ConsumeExpected(ETokenType::NAME);
+			parser.ConsumeExpected(ETokenType::RIGHT_PAREN);
+		}
+		
 		return std::make_unique<DefinedCallExpression>(idToken.m_text);
 	}
 

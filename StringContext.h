@@ -181,6 +181,10 @@ struct StrCTX {
 		return *head;
 	}
 
+	char HeadCharAtDistance(int distance) const {
+		return *(head + distance);
+	}
+
 	const char* HeadCStr() const {
 		return IT_AS_CSTR(head);
 	}
@@ -444,9 +448,9 @@ struct IfCtx {
 
 			if (runningIfInfo.bTrueIsDone)
 			{
-				printf("%s---> Replacing zone [%d, %d[ with zone [%d, %d[\n", tabIndentStr(runningIfInfo.level),
-					runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone,
-					runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone);
+				//printf("%s---> Replacing zone [%d, %d[ with zone [%d, %d[\n", tabIndentStr(runningIfInfo.level),
+				//	runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone,
+				//	runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone);
 
 				SubStrLoc replacedSubLoc{ runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone };
 				SubStrLoc fillingdSubLoc{ runningIfInfo.start_remaining_zone, runningIfInfo.end_remaining_zone };
@@ -454,19 +458,19 @@ struct IfCtx {
 			}
 			else
 			{
-				printf("%s---> No selected zone.\n", tabIndentStr(runningIfInfo.level));
+				//printf("%s---> No selected zone.\n", tabIndentStr(runningIfInfo.level));
 
 				SubStrLoc erasedSubLoc{ runningIfInfo.start_replaced_zone, runningIfInfo.end_replaced_zone };
 				ctx.Erase(erasedSubLoc, StrCTX::e_insidereplacedzonebehaviour_ASSERT);
 			}
 
-			printf("\n");
+			//printf("\n");
 
 			bOutMustSkip = false;
 		}
 		else // Already in ignored {scope}
 		{
-			if (TopLevelCount() - 1 == EndIgnoreLevelCount()) // Leaving the ignored scope level, clear ignore mechanism
+			if (TopLevelCount() == EndIgnoreLevelCount()) // Leaving the ignored scope level, clear ignore mechanism
 			{
 				bOutMustSkip = false;
 				ClearIgnoreLevel();

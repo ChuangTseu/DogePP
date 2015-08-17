@@ -61,7 +61,21 @@ static const char* LUT_TabIndentLevelStr[] = {
 
 inline const char* tabIndentStr(int level)
 {
-	DOGE_ASSERT(level >= 0 && level < 10);
-	return LUT_TabIndentLevelStr[level];
+	static char szManyTabs[] = "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tt\t\t\t\t\t\t\t\t\t\tt\t\t\t\t\t\t\t";
+	static const int len = static_cast<int>(strlen(szManyTabs));
+
+	static int last_level = -1;
+
+	DOGE_ASSERT(level >= 0 && level < len);
+
+	if (last_level > 0)
+	{
+		szManyTabs[last_level] = '\t';
+	}
+
+	szManyTabs[level] = '\0';
+	last_level = level;
+
+	return szManyTabs;
 }
 

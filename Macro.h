@@ -32,7 +32,7 @@ struct Macro {
 		DOGE_ASSERT(m_args.size() == vStrArgs.size());
 
 		outStr = m_strContent;
-		StrCTX tmpCtx(outStr);
+		StrCTX tmpCtx(outStr, "");
 
 		std::vector<MacroArg> tmpMacroArgs = m_args;
 

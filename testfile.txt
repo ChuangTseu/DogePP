@@ -3,77 +3,79 @@
 
 #define BOB_DEF "MICHEL_LE"
 
-#define HEY(val /*theValue*/,eEnum /* theEnum	*/  ,	/*dummyTesterArg*/ vam /*Reaaly, it's a dummy*/) \
-	g_i = hick(val); g_ret = g_eMult * eEnum; while (g_i >= 0) { \
-		g_count += g_ret; if(eEnum != e_enum_unknow) { registerGlobalEnumWithVal(eEnum, val); } \
-	}
+#define HEY(val /*theValue*/,eEnum /* theEnum   */  ,   /*dummyTesterArg*/ vam /*Reaaly, it's a dummy*/) \
+    g_i = hick(val); g_ret = g_eMult * eEnum; while (g_i >= 0) { \
+        g_count += g_ret; if(eEnum != e_enum_unknow) { registerGlobalEnumWithVal(eEnum, val); } \
+    }
 
 
 int main() {
 
-	const char* cb = BOB_DEF;
+    const char* cb = BOB_DEF;
 
-	#ifdef BOB_DEF
-		int BOB_DEF__isDefined;
-		#define BOB_DEF__ISDEFINED
+    #ifdef BOB_DEF
+        int BOB_DEF__isDefined;
+        #define BOB_DEF__ISDEFINED
 
-		#ifdef HE
-			int HE__isDefined;
-			#define BOB_DEF__ISDEFINED
-		#else
-			#ifdef HEY
-				int HEY__isDefined;
-				#define HEY__ISDEFINED
-			#else
-				int HEY__isNotAtAllDefined;
-				#define HEY__ISNOTATALLDEFINED
-			#endif
-			int HE__isNotAtAllDefined;
-			#define HE__ISNOTATALLDEFINED
-		#endif
+        #ifdef HE
+            int HE__isDefined;
+            #define BOB_DEF__ISDEFINED
+        #else
+            #ifdef HEY
+                int HEY__isDefined;
+                #define HEY__ISDEFINED
+            #else
+                int HEY__isNotAtAllDefined;
+                #define HEY__ISNOTATALLDEFINED
+            #endif
+            int HE__isNotAtAllDefined;
+            #define HE__ISNOTATALLDEFINED
+        #endif
 
-	#else
-		#ifdef FRANCIS
-			int FRANCIS__isDefined;
-			#define FRANCIS__ISDEFINED
-		#else
-			int FRANCIS__isNotAtAllDefined;
-			#define FRANCIS__ISNOTATALLDEFINED
-		#endif
+    #else
+        #ifdef FRANCIS
+            int FRANCIS__isDefined;
+            #define FRANCIS__ISDEFINED
+        #else
+            int FRANCIS__isNotAtAllDefined;
+            #define FRANCIS__ISNOTATALLDEFINED
+        #endif
 
-		int BOB_DEF__isNotAtAllDefined;
-		#define BOB_DEF__ISNOTATALLDEFINED
-	#endif
+            // Popped Comment Plz
 
-	#define ASTUCE_DE_GROS(porc) \
-		do /*doing nothing actually*/ { \
-			MangerDu(porc); \
-		} while(FaimDe(porc));
+        int BOB_DEF__isNotAtAllDefined;
+        #define BOB_DEF__ISNOTATALLDEFINED
+    #endif
 
-	HEY(ho, e, u);
+    #define ASTUCE_DE_GROS(porc) \
+        do /*doing nothing actually*/ { \
+            MangerDu(porc); \
+        } while(FaimDe(porc));
 
-	#define WILLITFN(i) ASTUCE_DE_GROS((caca + i))
+    HEY(ho, e, u);
 
-	WILLITFN(3);
+    #define WILLITFN(i) ASTUCE_DE_GROS((caca + i))
 
-	#ifdef ASTUCE_DE_GROS
+    WILLITFN(3);
 
-	/* Commented stuff */
-	ASTUCE_DE_GROS(poulet);
+    #ifdef ASTUCE_DE_GROS
 
-	#endif
+    /* Commented stuff */
+    ASTUCE_DE_GROS(poulet);
 
-	int iValue = 3 + 2;
+    #endif
 
-	const char* szLiteralTest = "My fucking literal";
+    int iValue = 3 + 2;
 
-	const char* szMultiLineLiteralTest = "My fucking literal \
+    const char* szLiteralTest = "My fucking literal";
+
+    const char* szMultiLineLiteralTest = "My fucking literal \
 over multiple lines";
-	
-	const char* szMultiLineWithEscapedLiteralTest = "My fu\'cking \\\\litera\"l \
+    
+    const char* szMultiLineWithEscapedLiteralTest = "My fu\'cking \\\\litera\"l \
 over multip\ele lines";
 
-	const char* szMultiLineWithEscapedAndWithErrorsLiteralTest = "My fu\'cking \\\\litera\"l \
+    const char* szMultiLineWithEscapedAndWithErrorsLiteralTest = "My fu\'cking \\\\litera\"l \
 over multip\ele lines";
 
 #ifdef ASTUCE_DE_GROS
@@ -102,8 +104,8 @@ return 0;
 int valid;
 #endif
 
-	MACSTR3;
-	*/
+    MACSTR3;
+    */
 
 #define S4(i)    S1((i)),   S1((i)+1),     S1((i)+2),     S1((i)+3)
 #define S16(i)   S4((i)),   S4((i)+4),     S4((i)+8),     S4((i)+12)
@@ -112,37 +114,37 @@ int valid;
 #define S1024(i) S256((i)), S256((i)+256), S256((i)+512), S256((i)+768)
 
 
-	const uchar LUT_uchar_numbers[] = {
-		#define S1(i) i
-			S4(0)
-		#undef S1
-	}
+    const uchar LUT_uchar_numbers[] = {
+        #define S1(i) i
+            S4(0)
+        #undef S1
+    }
 
-	const uchar LUT_uchar_numbers_times_10[] = {
-		#define S1(i) uchar{10*i},
-			S4(0)
-		#undef S1
-	}
+    const uchar LUT_uchar_numbers_times_10[] = {
+        #define S1(i) uchar{10*i},
+            S4(0)
+        #undef S1
+    }
 
-	// "( ( 10 > 9 ) && ( 6 == ( 6 && ( 18 * ( 10 == 180 ) ) ) ) )"
+    // "( ( 10 > 9 ) && ( 6 == ( 6 && ( 18 * ( 10 == 180 ) ) ) ) )"
 
-	#if (0x10 > 15) && ((2 + 4) /* haha */ == \
-	 6 && (18 * 10 =\
+    #if (0x10 > 15) && ((2 + 4) /* haha */ == \
+     6 && (18 * 10 =\
 = 180))
-		char Valid_If_Expression = !!if !!true;
-	#elif 5 & 1
-		char Valid_Elif_Expression = !!elif !!true;
-	#else
-		char Valid_Else_Expression = !!else !!whatever;
-	#endif
+        char Valid_If_Expression = !!if !!true;
+    #elif 5 & 1
+        char Valid_Elif_Expression = !!elif !!true;
+    #else
+        char Valid_Else_Expression = !!else !!whatever;
+    #endif
 
-	//#define JEAN_FRANCIS
+    //#define JEAN_FRANCIS
 
-	#if defined(JEAN_FRANCIS)
-		char Valid_If_Defined_JEAN_FRANCIS = TRUE;
-	#else
-		char Not_Valid_If_Defined_JEAN_FRANCIS = FALSE;
-	#endif
+    #if defined(JEAN_FRANCIS)
+        char Valid_If_Defined_JEAN_FRANCIS = TRUE;
+    #else
+        char Not_Valid_If_Defined_JEAN_FRANCIS = FALSE;
+    #endif
 
 }
 

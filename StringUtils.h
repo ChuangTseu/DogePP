@@ -29,6 +29,12 @@ struct SubStrLoc {
 		return strFrom.substr(m_start, Length());
 	}
 
+	void Shift(int distance)
+	{
+		m_start += distance;
+		m_end += distance;
+	}
+
 	bool IsInside(StrSizeT pos)
 	{
 		return pos >= m_start && pos < m_end;
@@ -44,6 +50,11 @@ struct SubStrLoc {
 		return pos >= m_end;
 	}
 };
+
+inline bool operator==(const SubStrLoc& lhs, const SubStrLoc& rhs)
+{
+	return lhs.m_start == rhs.m_start && lhs.m_end == rhs.m_end;
+}
 
 static const char* LUT_TabIndentLevelStr[] = {
 	"",

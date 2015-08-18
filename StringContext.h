@@ -6,6 +6,7 @@
 
 #include <stack>
 #include <vector>
+#include <algorithm>
 
 #define IT_AS_CSTR(it) (static_cast<const char*>(&(*(it))))
 
@@ -25,27 +26,81 @@ struct RunningIfInfo {
 	StrSizeT end_replaced_zone = npos<StrSizeT>::value;
 };
 
+struct IncludedScopeInfo {
+	std::vector<SubStrLoc> vLinesSubLocs;
+	std::vector<std::string> strComments;
+	std::vector<StrSizeT> commentsPositions;
+	int iLinesCount = 0;
+
+	// 
+	// Can only merge from moved IncludedScopeInfo for perf reasons
+	void MergeFromMovedIncludedScopeInfo(const IncludedScopeInfo& movedScopeInfo, int aboveScopeLineStart) = delete;
+
+	void MergeFromMovedIncludedScopeInfo(IncludedScopeInfo&& movedScopeInfo, int aboveScopeLineStart)
+	{
+		if (movedScopeInfo.vLinesSubLocs.size())
+		{
+			for (SubStrLoc& subLoc : movedScopeInfo.vLinesSubLocs) subLoc.Shift(aboveScopeLineStart);
+			auto linesSubLocsInsertPointIt = std::lower_bound(vLinesSubLocs.begin(), vLinesSubLocs.end(), movedScopeInfo.vLinesSubLocs.front(),
+				[](const SubStrLoc& lhs, const SubStrLoc& rhs){ return lhs.m_start < rhs.m_end;  });
+			vLinesSubLocs.insert(linesSubLocsInsertPointIt, movedScopeInfo.vLinesSubLocs.begin(), movedScopeInfo.vLinesSubLocs.end());
+		}
+
+		iLinesCount += movedScopeInfo.iLinesCount;
+
+		strComments.insert(strComments.end(),
+			std::make_move_iterator(movedScopeInfo.strComments.begin()), std::make_move_iterator(movedScopeInfo.strComments.end())); // Benefit from strings move efficiency
+
+		if (movedScopeInfo.commentsPositions.size())
+		{
+			for (StrSizeT& subLoc : movedScopeInfo.commentsPositions) subLoc += aboveScopeLineStart;
+			auto commentPosisiontsInsertPointIt = std::lower_bound(commentsPositions.begin(), commentsPositions.end(), movedScopeInfo.commentsPositions.front());
+			commentsPositions.insert(commentPosisiontsInsertPointIt, movedScopeInfo.commentsPositions.begin(), movedScopeInfo.commentsPositions.end());
+		}
+	}
+
+	bool IsEmpty() const
+	{
+		return vLinesSubLocs.empty() && strComments.empty() && commentsPositions.empty() && iLinesCount == 0;
+	}
+};
+
+
 struct StrCTX {
-	StrCTX(std::string& capturedString) : baseStr(capturedString), head(baseStr.cbegin()) {}
+	StrCTX(std::string& capturedString) : StrCTX(capturedString, capturedString.cbegin()) {}
 
-	StrCTX(std::string& capturedString, StrCItT customHeadIt) : baseStr(capturedString), head(customHeadIt) {}
+	StrCTX(std::string& capturedString, StrCItT customHeadIt) : m_baseStr(capturedString), m_head(customHeadIt) {
+		//RegisterIncludedScopeInfo(m_includedScopeInfo);
+	}
 
-	std::string& baseStr;
-	StrCItT head;
+	std::string& m_baseStr;
+	StrCItT m_head;
 
-	bool bInLineStart = true;
-	int lineNumber = 1;
+	bool m_bInLineStart = true;
+	int m_lineNumber = 1;
 
-	int numNeededCommentSubtitutions = 0;
+	std::vector<SubStrLoc*> m_vRegisteredSubLocs;
+	std::vector<StrSizeT*> m_vRegisteredPositions;
 
-	std::vector<SubStrLoc*> vRegisteredSubLocs;
-	std::vector<StrSizeT*> vRegisteredPositions;
+	std::vector<std::vector<SubStrLoc>*> m_vRegisteredSubLocArrays;
+	std::vector<std::vector<StrSizeT>*> m_vRegisteredPositionArrays;
+
+	IncludedScopeInfo m_includedScopeInfo;
+
+	template <class DONOTUSETHISFUNCTION>
+	void RegisterIncludedScopeInfo(IncludedScopeInfo& includedScopeInfo)
+	{
+		int willFailIfInstantiated = DONOTUSETHISFUNCTION::PleaseDoNotEncounterAnyMiraculouslyAlreadyDefinedTypeTPublicStaticSymbol;
+
+		RegisterLivePatchableCtxSubLocArray(includedScopeInfo.vLinesSubLocs);
+		RegisterLivePatchableCtxPosArray(includedScopeInfo.commentsPositions);
+	}
 
 	void InsertHere(const std::string& str, bool bAdvanceAfterInserted)
 	{
 		StrSizeT insertPos = CurrentPos();
 
-		baseStr.insert(insertPos, str);
+		m_baseStr.insert(insertPos, str);
 
 		if (bAdvanceAfterInserted)
 		{
@@ -118,75 +173,178 @@ struct StrCTX {
 		return adjustedSubLoc;
 	}
 
-	void Erase(SubStrLoc replacedSubLoc, EInsideReplacedZoneBehaviour eBehaviour)
+#define TMP_DEFAULT_REGISTERED_POS_BEHAVIOR e_insidereplacedzonebehaviour_GOTO_START
+
+	void AdjustAllRegisteredLocations(SubStrLoc replacedSubLoc, StrSizeT filledLength)
+	{
+		//
+		// Note : No fine tuned perRegistered behavior for now, just assert if inside
+		for (SubStrLoc* pSubLoc : m_vRegisteredSubLocs) 
+			*pSubLoc = ComputeAdjustedSubStrLocAfterReplace(*pSubLoc, replacedSubLoc, filledLength, TMP_DEFAULT_REGISTERED_POS_BEHAVIOR);
+		for (StrSizeT* pPos : m_vRegisteredPositions) 
+			*pPos = ComputeAdjustedPosAfterReplace(*pPos, replacedSubLoc, filledLength, TMP_DEFAULT_REGISTERED_POS_BEHAVIOR);
+		for (auto pSubLocArray : m_vRegisteredSubLocArrays)
+			for (SubStrLoc& subLoc : *pSubLocArray) 
+				subLoc = ComputeAdjustedSubStrLocAfterReplace(subLoc, replacedSubLoc, filledLength, TMP_DEFAULT_REGISTERED_POS_BEHAVIOR);
+		for (auto pPositionsArray : m_vRegisteredPositionArrays)
+			for (StrSizeT& pos : *pPositionsArray) 
+				pos = ComputeAdjustedPosAfterReplace(pos, replacedSubLoc, filledLength, TMP_DEFAULT_REGISTERED_POS_BEHAVIOR);
+	}
+
+	void AdjustScopeInfoLocations(SubStrLoc replacedSubLoc, StrSizeT filledLength)
+	{
+		auto& vComsPos = m_includedScopeInfo.commentsPositions;
+		auto& vComsStr = m_includedScopeInfo.strComments;
+		auto& vLinesSubLoc = m_includedScopeInfo.vLinesSubLocs;
+
+		{ // Pop out comments (typically from an unselected #if/#else guard zone)
+			auto poppedComsBegIt = std::lower_bound(vComsPos.begin(), vComsPos.end(), replacedSubLoc.m_start);
+
+			if (poppedComsBegIt != vComsPos.end()
+				&& *poppedComsBegIt < replacedSubLoc.m_end)
+			{
+				auto poppedComsEndIt = std::lower_bound(poppedComsBegIt, vComsPos.end(), replacedSubLoc.m_end);
+
+				size_t poppedBegPos = std::distance(vComsPos.begin(), poppedComsBegIt);
+				size_t poppedEndPos = std::distance(vComsPos.begin(), poppedComsEndIt);
+
+				vComsPos.erase(poppedComsBegIt, poppedComsEndIt);
+				for (size_t i = poppedBegPos; i < vComsPos.size(); ++i) 
+					vComsPos[i] = ComputeAdjustedPosAfterReplace(vComsPos[i], replacedSubLoc, filledLength, e_insidereplacedzonebehaviour_ASSERT);
+				vComsStr.erase(vComsStr.begin() + poppedBegPos, vComsStr.begin() + poppedEndPos);
+			}
+		}
+
+		{ // Pop out lines (typically from an unselected #if/#else guard zone)
+			auto poppedLinesBegIt = std::lower_bound(vLinesSubLoc.begin(), vLinesSubLoc.end(), replacedSubLoc,
+				[](const SubStrLoc& lhs, const SubStrLoc& rhs) { return lhs.m_start < rhs.m_start; });
+
+			if (poppedLinesBegIt != vLinesSubLoc.end()
+				&& poppedLinesBegIt->m_start < replacedSubLoc.m_end)
+			{
+				auto poppedLinesEndIt = std::lower_bound(poppedLinesBegIt, vLinesSubLoc.end(), replacedSubLoc,
+					[](const SubStrLoc& lhs, const SubStrLoc& rhs) { return lhs.m_start < rhs.m_start; });
+
+				size_t poppedBegPos = std::distance(vLinesSubLoc.begin(), poppedLinesBegIt);
+				size_t poppedEndPos = std::distance(vLinesSubLoc.begin(), poppedLinesEndIt);
+
+#if POPOUT_LINES
+				vLinesSubLoc.erase(poppedLinesBegIt, poppedLinesEndIt);
+				for (size_t i = poppedBegPos; i < vLinesSubLoc.size(); ++i)
+				{
+					if (vLinesSubLoc[i] == replacedSubLoc) // Exact deleted match is just transformed into the 0 sized [begin,begin[ interval
+					{
+						vLinesSubLoc[i].m_end = vLinesSubLoc[i].m_start;
+					}
+					else
+					{
+						vLinesSubLoc[i] = ComputeAdjustedSubStrLocAfterReplace(vLinesSubLoc[i], replacedSubLoc, filledLength, e_insidereplacedzonebehaviour_ASSERT);
+					}
+				}
+#else // Just make them zero lines but keep them in the array
+				for (size_t i = poppedBegPos; i < vLinesSubLoc.size(); ++i)
+				{
+					if (vLinesSubLoc[i].m_end <= replacedSubLoc.m_end)
+					{
+						vLinesSubLoc[i].m_end = vLinesSubLoc[i].m_start;
+					}
+					else
+					{
+						vLinesSubLoc[i] = ComputeAdjustedSubStrLocAfterReplace(vLinesSubLoc[i], replacedSubLoc, filledLength, e_insidereplacedzonebehaviour_ASSERT);
+					}
+				}
+#endif
+			}
+		}
+		
+	}
+
+	void Erase(SubStrLoc replacedSubLoc, EInsideReplacedZoneBehaviour eBehaviour, bool bPopScopeInfo = true)
 	{
 		StrSizeT headPosBeforeIns = CurrentPos();
 
-		baseStr.erase(replacedSubLoc.m_start, replacedSubLoc.Length());
+		m_baseStr.erase(replacedSubLoc.m_start, replacedSubLoc.Length());
 
 		SetHead(ComputeAdjustedPosAfterReplace(headPosBeforeIns, replacedSubLoc, 0, eBehaviour));
 
-		for (SubStrLoc* pSubLoc : vRegisteredSubLocs)
-		{
-			//
-			// Note : No fine tuned perRegistered behavior for now, just assert if inside
-			*pSubLoc = ComputeAdjustedSubStrLocAfterReplace(*pSubLoc, replacedSubLoc, 0, e_insidereplacedzonebehaviour_ASSERT);
-		}
+		AdjustAllRegisteredLocations(replacedSubLoc, 0);
+		if (bPopScopeInfo)
+			AdjustScopeInfoLocations(replacedSubLoc, 0);
 	}
 
-	void Replace(SubStrLoc replacedSubLoc, const std::string& fillingString, EInsideReplacedZoneBehaviour eBehaviour)
+	void Replace(SubStrLoc replacedSubLoc, const std::string& fillingString, EInsideReplacedZoneBehaviour eBehaviour, bool bPopScopeInfo = true)
 	{
 		StrSizeT headPosBeforeIns = CurrentPos();
 		StrSizeT filledLength = fillingString.length();
 
-		baseStr.replace(replacedSubLoc.m_start, replacedSubLoc.Length(), fillingString);
+		m_baseStr.replace(replacedSubLoc.m_start, replacedSubLoc.Length(), fillingString);
 
 		SetHead(ComputeAdjustedPosAfterReplace(headPosBeforeIns, replacedSubLoc, filledLength, eBehaviour));
 
-		for (SubStrLoc* pSubLoc : vRegisteredSubLocs)
-		{
-			//
-			// Note : No fine tuned perRegistered behavior for now, just assert if inside
-			*pSubLoc = ComputeAdjustedSubStrLocAfterReplace(*pSubLoc, replacedSubLoc, filledLength, e_insidereplacedzonebehaviour_ASSERT);
-		}
+		AdjustAllRegisteredLocations(replacedSubLoc, filledLength);
+		if (bPopScopeInfo)
+			AdjustScopeInfoLocations(replacedSubLoc, filledLength);
 	}
 
 	void Replace(SubStrLoc replacedSubLoc, SubStrLoc fillingSubLoc, EInsideReplacedZoneBehaviour eBehaviour)
 	{
-		Replace(replacedSubLoc, fillingSubLoc.ExtractSubStr(baseStr), eBehaviour);
+		Replace(replacedSubLoc, fillingSubLoc.ExtractSubStr(m_baseStr), eBehaviour);
 	}
 
 	void RegisterLivePatchableCtxSubLoc(SubStrLoc& subLoc)
 	{
-		vRegisteredSubLocs.push_back(&subLoc);
+		m_vRegisteredSubLocs.push_back(&subLoc);
 	}
 
 	void UnregisterLivePatchableCtxSubLoc(const SubStrLoc& subLoc)
 	{
-		vRegisteredSubLocs.erase(std::find(vRegisteredSubLocs.begin(), vRegisteredSubLocs.end(), &subLoc));
+		m_vRegisteredSubLocs.erase(std::find(m_vRegisteredSubLocs.begin(), m_vRegisteredSubLocs.end(), &subLoc));
+	}
+
+
+	void RegisterLivePatchableCtxSubLocArray(std::vector<SubStrLoc>& vSubLocs)
+	{
+		m_vRegisteredSubLocArrays.push_back(&vSubLocs);
+	}
+
+	void UnregisterLivePatchableCtxSubLocArray(std::vector<SubStrLoc>& vSubLocs)
+	{
+		m_vRegisteredSubLocArrays.erase(std::find(m_vRegisteredSubLocArrays.begin(), m_vRegisteredSubLocArrays.end(), &vSubLocs));
 	}
 
 
 	void RegisterLivePatchableCtxPos(StrSizeT& pos)
 	{
-		vRegisteredPositions.push_back(&pos);
+		m_vRegisteredPositions.push_back(&pos);
 	}
 
 	void UnregisterLivePatchableCtxPos(StrSizeT& pos)
 	{
-		vRegisteredPositions.erase(std::find(vRegisteredPositions.begin(), vRegisteredPositions.end(), &pos));
+		m_vRegisteredPositions.erase(std::find(m_vRegisteredPositions.begin(), m_vRegisteredPositions.end(), &pos));
 	}
 
+
+	void RegisterLivePatchableCtxPosArray(std::vector<StrSizeT>& vPos)
+	{
+		m_vRegisteredPositionArrays.push_back(&vPos);
+	}
+
+	void UnregisterLivePatchableCtxPosArray(std::vector<StrSizeT>& vPos)
+	{
+		m_vRegisteredPositionArrays.erase(std::find(m_vRegisteredPositionArrays.begin(), m_vRegisteredPositionArrays.end(), &vPos));
+	}
+
+
 	char HeadChar() const {
-		return *head;
+		return *m_head;
 	}
 
 	char HeadCharAtDistance(int distance) const {
-		return *(head + distance);
+		return *(m_head + distance);
 	}
 
 	const char* HeadCStr() const {
-		return IT_AS_CSTR(head);
+		return IT_AS_CSTR(m_head);
 	}
 
 	void AdvanceHead()
@@ -195,14 +353,14 @@ struct StrCTX {
 
 		if (HeadChar() == '\n')
 		{
-			bInLineStart = true;
+			m_bInLineStart = true;
 		}
-		else if (bInLineStart && !isHSpace(HeadChar()))
+		else if (m_bInLineStart && !isHSpace(HeadChar()))
 		{
-			bInLineStart = false;
+			m_bInLineStart = false;
 		}
 
-		++head;
+		++m_head;
 	}
 
 	void Advance(StrSizeT amount) {
@@ -213,33 +371,33 @@ struct StrCTX {
 	}
 
 	void SetHead(StrSizeT pos) {
-		head = baseStr.cbegin() + pos;
+		m_head = m_baseStr.cbegin() + pos;
 	}
 
 	StrSizeT CurrentPos() const {
-		return std::distance(baseStr.cbegin(), head);
+		return std::distance(m_baseStr.cbegin(), m_head);
 	}
 
 	bool IsEnded() const {
-		return head == baseStr.cend();
+		return m_head == m_baseStr.cend();
 	}
 
 	StrSizeT ItPos(StrCItT it) const {
-		return std::distance(baseStr.cbegin(), it);
+		return std::distance(m_baseStr.cbegin(), it);
 	}
 
 	bool ItIsEnd(StrCItT it) const {
-		return it == baseStr.cend();
+		return it == m_baseStr.cend();
 	}
 
 	template <class FN>
 	void ExecWithTmpSzSubCStr(SubStrLoc subLoc, const FN& fn) {
-		char cRestore = baseStr[subLoc.m_end];
-		baseStr[subLoc.m_end] = '\0';
+		char cRestore = m_baseStr[subLoc.m_end];
+		m_baseStr[subLoc.m_end] = '\0';
 
-		fn(static_cast<const char*>(&baseStr[subLoc.m_start]));
+		fn(static_cast<const char*>(&m_baseStr[subLoc.m_start]));
 
-		baseStr[subLoc.m_end] = cRestore;
+		m_baseStr[subLoc.m_end] = cRestore;
 	}
 };
 

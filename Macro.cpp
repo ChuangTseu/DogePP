@@ -9,10 +9,6 @@ bool gMacroIsUnique(const std::string& strKey)
 
 bool gMacroInsert(const std::string& strKey, Macro macro)
 {
-	if (strKey == "FxaaTexAlpha4")
-	{
-		int breakpoint = -1;
-	}
 	bool bWasUnique = true;
 
 	if (!gMacroIsUnique(strKey))

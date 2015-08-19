@@ -9,6 +9,8 @@
 
 #define DOGE_DEBUG_ASSERT(cond) assert(cond);
 
+#define DOGE_DEBUG_ASSERT_MESSAGE(cond, ...) assert(cond);
+
 #ifdef NDEBUG
 #define DOGE_ASSERT(cond) if(!(cond)) { eprintf("Realease Assert triggered over condition : %s. Exit.\n", #cond); }	
 #else

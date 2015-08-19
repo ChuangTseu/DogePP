@@ -150,7 +150,7 @@ EDirective szNameToEDirective(const char* szName)
 
 const char* EDirectiveToSzName(EDirective eDirective)
 {
-	DOGE_ASSERT(eDirective >= 0 && eDirective < e_directive_COUNT);
+	DOGE_DEBUG_ASSERT(eDirective >= 0 && eDirective < e_directive_COUNT);
 	return LUT_EDirective_szName[eDirective];
 }
 
@@ -175,26 +175,11 @@ SubStrLoc GetSubLocUntilSz(StrCTX& ctx, const char* sz, bool bKeepDelimiter, uin
 char ConsumeCharExpected(StrCTX& ctx, char expectedChar, uint32_t ignoreField = 0)
 {
 	char consumedChar = ConsumeChar(ctx, ignoreField);
-	DOGE_ASSERT_MESSAGE(consumedChar == expectedChar, "Error. Could not consume expected char.\n");
+	if (consumedChar != expectedChar)
+	{
+		CTX_ERROR(ctx, "Could not consume expected char '%c', found '%c'", expectedChar, consumedChar);
+	}
 	return consumedChar;
-}
-
-bool skipEntireMultiLineComment(StrCTX& ctx)
-{
-	while (!ctx.IsEnded() && !isMultiLineCommentEnd(ctx.HeadCStr()))
-	{
-		*(*(std::string::iterator*)&ctx.m_head) = 'o';
-		ctx.Advance(1);
-	}
-
-	if (ctx.IsEnded())
-	{
-		return false; // No EOL found
-	}
-
-	ctx.Advance(COMMENT_ML_END_LENGTH);
-
-	return true;
 }
 
 SubStrLoc GetMultiLineCommentSubLoc(StrCTX& ctx, bool bKeepDelimiter)
@@ -214,7 +199,6 @@ bool skipEntireLine(StrCTX& ctx)
 	StrSizeT lastLRLength;
 	while (!ctx.IsEnded() && !isLineReturn(ctx.HeadCStr(), &lastLRLength))
 	{
-		*(*(std::string::iterator*)&ctx.m_head) = '-';
 		ctx.Advance(1);
 	}
 
@@ -238,7 +222,7 @@ void skipHSpaces(StrCTX& ctx)
 
 bool skipMultiScopeCharEnclosed(StrCTX& ctx, char c_open, char c_close)
 {
-	DOGE_ASSERT_MESSAGE(c_open != c_close, "Error. Cannot handle multiple scopes when opening and closing sequence are the same.\n");
+	DOGE_DEBUG_ASSERT_MESSAGE(c_open != c_close, "Error. Cannot handle multiple scopes when opening and closing sequence are the same.\n");
 
 	skipHSpaces(ctx);
 
@@ -271,7 +255,7 @@ bool skipMultiScopeCharEnclosed(StrCTX& ctx, char c_open, char c_close)
 
 SubStrLoc GetMultiScopeCharEnclosedSubLoc(StrCTX& ctx, char c_open, char c_close, bool bKeepDelimiters)
 {
-	DOGE_ASSERT_MESSAGE(c_open != c_close, "Error. Cannot handle multiple scopes when opening and closing sequence are the same.\n");
+	DOGE_DEBUG_ASSERT_MESSAGE(c_open != c_close, "Error. Cannot handle multiple scopes when opening and closing sequence are the same.\n");
 
 	StrSizeT restorePos = ctx.CurrentPos();
 
@@ -298,7 +282,10 @@ SubStrLoc GetMultiScopeCharEnclosedSubLoc(StrCTX& ctx, char c_open, char c_close
 		subLoc.m_end = ctx.CurrentPos();
 
 		char c = ConsumeChar(ctx);
-		DOGE_ASSERT_MESSAGE(c != '\n', "");
+		if (c == '\n')
+		{
+			CTX_ERROR(ctx, "Unexpected LineReturn interupting '%c''%c' delimited scope", c_open, c_close);
+		}
 
 		if (c == c_open) ++pileCount;
 		else if (c == c_close) --pileCount;
@@ -334,7 +321,7 @@ bool advanceToNextConditionDirective(StrCTX& ctx)
 		EDirective eDirective;
 		if (!retrieveDirectiveType(ctx, eDirective, directiveStartPos))
 		{
-			DOGE_ASSERT_ALWAYS_MESSAGE("Error retrieving directive type.\n");
+			CTX_ERROR(ctx, "Could not retrieve directive type");
 		}
 
 		if (isConditionnalDirective(eDirective))
@@ -361,8 +348,7 @@ bool advanceToEndOfLiteral(StrCTX& ctx, char litEndChar)
 
 char LookChar(StrCTX& ctx, uint32_t ignoreField)
 {
-	DOGE_ASSERT_MESSAGE(!ctx.IsEnded(),
-		"Error at line %d. Could not consume char, unexpected EOL.\n", ctx.m_lineNumber); // An error for now, should be checked before consuming
+	DOGE_DEBUG_ASSERT_MESSAGE(!ctx.IsEnded(), "Could not consume char, unexpected EOL.\n"); // An error for now, should be checked before consuming
 
 	if (!(ignoreField & IGNORE_ML_COMMENT) && isMultiLineCommentStart(ctx.HeadCStr()))
 	{
@@ -415,8 +401,8 @@ char LookChar(StrCTX& ctx, uint32_t ignoreField)
 
 	if (ctx.HeadChar() == '\r')
 	{
-		DOGE_ASSERT_MESSAGE(ctx.HeadCharAtDistance(1) == '\n',
-			"Error at line %d. Unsupported single ControlReturn without following LineReturn symbol.\n", ctx.m_lineNumber);
+		if (ctx.HeadCharAtDistance(1) != '\n')
+			CTX_ERROR(ctx, "Unsupported single ControlReturn without following LineReturn symbol");
 
 		return '\n';
 	}
@@ -426,8 +412,7 @@ char LookChar(StrCTX& ctx, uint32_t ignoreField)
 
 char ConsumeChar(StrCTX& ctx, uint32_t ignoreField) 
 {
-	DOGE_ASSERT_MESSAGE(!ctx.IsEnded(), 
-		"Error at line %d. Could not consume char, unexpected EOL.\n", ctx.m_lineNumber); // An error for now, should be checked before consuming
+	DOGE_DEBUG_ASSERT_MESSAGE(!ctx.IsEnded(), "Could not consume char, unexpected EOL.\n"); // An error for now, should be checked before consuming
 
 	if (!(ignoreField & IGNORE_ML_COMMENT) && isMultiLineCommentStart(ctx.HeadCStr()))
 	{
@@ -478,8 +463,8 @@ char ConsumeChar(StrCTX& ctx, uint32_t ignoreField)
 
 	if (ctx.HeadChar() == '\r')
 	{
-		DOGE_ASSERT_MESSAGE(ctx.HeadCharAtDistance(1) == '\n',
-			"Error at line %d. Unsupported single ControlReturn without following LineReturn symbol.\n", ctx.m_lineNumber);
+		if (ctx.HeadCharAtDistance(1) != '\n')
+			CTX_ERROR(ctx, "Unsupported single ControlReturn without following LineReturn symbol");
 
 		ctx.AdvanceHead();
 		ctx.AdvanceHead();
@@ -499,10 +484,6 @@ int g_iLinesCount = 0;
 std::vector<std::string> g_strComments;
 std::vector<StrSizeT> g_commentsPositions;
 
-//IncludedScopeInfo g_globalScopeInfo;
-std::string dummyGlobalCtxInitString;
-StrCTX g_globalCtx{ dummyGlobalCtxInitString, "" }; // dummy initialization, the true init is done in main until we got a classic init function
-
 void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 {
 	StrSizeT lastLRLength;
@@ -514,18 +495,23 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 
 	while (!localCtx.IsEnded())
 	{
+		//if (runningLineSubLoc.m_start == 2169)
+		//{
+		//	int breakpoint = -1; 
+		//}
 #if SUPPORT_ML_COMMENTS
 		if (szEqN(localCtx.HeadCStr(), g_mlComment_szOpen, g_mlComment_openLength))
 		{
+			StrSizeT lineStartBefore = runningLineSubLoc.m_start;
 			// Inlining mlComment detection for faster scanning and handling of the line return without polluting other utilities
 			SubStrLoc mlCommentSubLoc{ localCtx.CurrentPos(), localCtx.CurrentPos() };
 			const char *szBeg = localCtx.HeadCStr(), *sz = szBeg;
 			while (*sz && !szEqN(sz, g_mlComment_szClose, g_mlComment_closeLength)) {
 				if (*sz == '\r') {
-					DOGE_ASSERT_MESSAGE(*(sz + 1) == '\n',
-						"Error at line %d. Unsupported single ControlReturn without following LineReturn symbol.\n", localCtx.m_lineNumber);
+					if (*(sz + 1) != '\n')
+						CTX_ERROR(localCtx, "Unsupported single ControlReturn without following LineReturn symbol");
 					runningLineSubLoc.m_end = mlCommentSubLoc.m_start + (sz - szBeg);
-					localCtx.m_includedScopeInfo.vLinesSubLocs.push_back(runningLineSubLoc);
+					localCtx.m_includedScopeInfo.AddLineSubLoc(runningLineSubLoc);
 					++localCtx.m_includedScopeInfo.iLinesCount;
 
 					sz += 2;
@@ -534,7 +520,7 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 				}
 				if (*sz == '\n') {
 					runningLineSubLoc.m_end = mlCommentSubLoc.m_start + (sz - szBeg);
-					localCtx.m_includedScopeInfo.vLinesSubLocs.push_back(runningLineSubLoc);
+					localCtx.m_includedScopeInfo.AddLineSubLoc(runningLineSubLoc);
 					++localCtx.m_includedScopeInfo.iLinesCount;
 
 					++sz;
@@ -544,7 +530,11 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 				++sz;
 			}
 
-			DOGE_ASSERT_MESSAGE(*sz, "Error. Unexpected EOL in multi line comment.\n");
+			if (!*sz)
+			{
+				CTX_ERROR(localCtx, "Unexpected End of Line in multi line comment");
+			}
+
 			mlCommentSubLoc.m_end += (sz + g_mlComment_closeLength - szBeg);
 
 			if (g_bKeepComment) {
@@ -552,7 +542,9 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 				localCtx.m_includedScopeInfo.commentsPositions.push_back(mlCommentSubLoc.m_start);
 			}
 
-			localCtx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_END, false);
+			localCtx.Replace(mlCommentSubLoc, " ", StrCTX::e_insidereplacedzonebehaviour_GOTO_END, true);
+
+			runningLineSubLoc.m_start = lineStartBefore + 1;
 
 			continue;
 		}
@@ -577,7 +569,7 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 		if (localCtx.HeadChar() == '\\' && isLineReturn(localCtx.HeadCStr() + 1, &lastLRLength)) // Skip line break
 		{
 			runningLineSubLoc.m_end = localCtx.CurrentPos();
-			localCtx.m_includedScopeInfo.vLinesSubLocs.push_back(runningLineSubLoc);
+			localCtx.m_includedScopeInfo.AddLineSubLoc(runningLineSubLoc);
 			++localCtx.m_includedScopeInfo.iLinesCount;
 
 			localCtx.Erase({ localCtx.CurrentPos(), localCtx.CurrentPos() + 1 + lastLRLength }, StrCTX::e_insidereplacedzonebehaviour_GOTO_START, false);
@@ -590,11 +582,11 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 		if (localCtx.HeadChar() == '\r')
 		{
 			runningLineSubLoc.m_end = localCtx.CurrentPos();
-			localCtx.m_includedScopeInfo.vLinesSubLocs.push_back(runningLineSubLoc);
+			localCtx.m_includedScopeInfo.AddLineSubLoc(runningLineSubLoc);
 			++localCtx.m_includedScopeInfo.iLinesCount;
 
-			DOGE_ASSERT_MESSAGE(localCtx.HeadCharAtDistance(1) == '\n',
-				"Error at line %d. Unsupported single ControlReturn without following LineReturn symbol.\n", localCtx.m_lineNumber);
+			if (localCtx.HeadCharAtDistance(1) != '\n')
+				CTX_ERROR(localCtx, "Unsupported single ControlReturn without following LineReturn symbol");
 
 			localCtx.AdvanceHead();
 			localCtx.AdvanceHead();
@@ -607,7 +599,7 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 		if (localCtx.HeadChar() == '\n')
 		{
 			runningLineSubLoc.m_end = localCtx.CurrentPos();
-			localCtx.m_includedScopeInfo.vLinesSubLocs.push_back(runningLineSubLoc);
+			localCtx.m_includedScopeInfo.AddLineSubLoc(runningLineSubLoc);
 			++localCtx.m_includedScopeInfo.iLinesCount;
 
 			localCtx.AdvanceHead();
@@ -619,15 +611,18 @@ void CleanupAndCheckStrBeforeInclude(StrCTX& localCtx)
 
 		localCtx.AdvanceHead();
 	}
+
+	localCtx.SetHead(0);
 }
 
-bool advanceToNextLineExpectHSpaceOnly(StrCTX& ctx)
+bool advanceToLineReturnExpectHSpaceOnly(StrCTX& ctx)
 {
 	char c;
 	while (!ctx.IsEnded() && ((c = LookChar(ctx)) != '\n'))
 	{
 		if (!isHSpace(c))
 		{
+			CTX_ERROR(ctx, "Found non space character '%s' while expecting only spaces", c);
 			return false; // Encountered non hspace character
 		}
 		ConsumeChar(ctx);
@@ -635,13 +630,11 @@ bool advanceToNextLineExpectHSpaceOnly(StrCTX& ctx)
 
 	if (ctx.IsEnded())
 	{
+		CTX_ERROR(ctx, "Unexpected End of Line");
 		return false; // Unexpected EOL
 	}
-	else
-	{
-		ConsumeChar(ctx); // Skip EOL symbol
-		return true;
-	}
+
+	return true;
 }
 
 bool retrieveIdentifier(StrCTX& ctx, std::string& outStrId)
@@ -656,6 +649,7 @@ bool retrieveIdentifier(StrCTX& ctx, std::string& outStrId)
 	}
 	else
 	{
+		CTX_ERROR(ctx, "Not a valid identifier, wrong first character '%c'", c);
 		return false;
 	}
 
@@ -674,7 +668,7 @@ bool getNextIdentifierLocation(StrCTX& ctx, SubStrLoc& outLocation, bool& isEOS)
 
 	while (!ctx.IsEnded() && !LUT_validIdFirstChar[ctx.HeadChar()])
 	{
-		ctx.Advance(1);
+		ctx.AdvanceHead();
 	}
 
 	if (ctx.IsEnded())
@@ -685,15 +679,16 @@ bool getNextIdentifierLocation(StrCTX& ctx, SubStrLoc& outLocation, bool& isEOS)
 
 	if (LUT_validIdBodyChar[*(ctx.m_head - 1)])
 	{
+		CTX_ERROR(ctx, "Found identifier with start not correctly separated");
 		return false; // Found identifier with start not correctly separated
 	}
 
 	StrSizeT idStartPos = ctx.CurrentPos();
 
-	ctx.Advance(1);
+	ctx.AdvanceHead();
 	while (!ctx.IsEnded() && LUT_validIdBodyChar[ctx.HeadChar()])
 	{
-		ctx.Advance(1);
+		ctx.AdvanceHead();
 	}
 
 	outLocation.m_start = idStartPos;
@@ -706,27 +701,25 @@ bool retrieveDirectiveType(StrCTX& ctx, EDirective& outEDirective, StrSizeT& out
 {
 	if (!ctx.m_bInLineStart)
 	{
-		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Character # can only happen at start of line content.\n", ctx.m_lineNumber);
+		CTX_ERROR(ctx, "Character # can only happen at start of line content");
 	}
 
 	StrSizeT directiveStartPos = ctx.CurrentPos();
 
-	DOGE_ASSERT(ctx.HeadChar() == '#');
+	DOGE_DEBUG_ASSERT(ctx.HeadChar() == '#');
 
-	ctx.Advance(1);
+	ctx.AdvanceHead();
 
 	std::string strId;
 	if (!retrieveIdentifier(ctx, strId))
 	{
-		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Invalid identifier.\n", ctx.m_lineNumber);
+		CTX_ERROR(ctx, "Could not retrieve identifier");
 	}
-
-	//printf("Found # identifier #%s.\n", strId.c_str());
 
 	EDirective eDirective = szNameToEnum<EDirective>(strId.c_str());
 	if (eDirective == e_directive_UNKNOWN)
 	{
-		DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Unknown directive #%s.\n", ctx.m_lineNumber, strId.c_str());
+		CTX_ERROR(ctx, "Unknown directive #%s", strId.c_str());
 	}
 
 	outEDirective = eDirective;
@@ -754,6 +747,7 @@ bool getCharEnclosedString(StrCTX& ctx, char c_open, char c_close,
 
 	if (ctx.IsEnded())
 	{
+		CTX_ERROR(ctx, "Unexpected End of Line");
 		return false;
 	}
 
@@ -762,26 +756,6 @@ bool getCharEnclosedString(StrCTX& ctx, char c_open, char c_close,
 	return true;
 }
 
-//char LookAheadSzOnce(const char* sz);
-//const char* AdvanceSzOnce(const char* sz);
-//
-//const char* AdvanceSzOnce(const char* sz)
-//{
-//	if (!*sz)
-//	{
-//		DOGE_ASSERT_ALWAYS_MESSAGE("Unexpected EOL.\n");
-//	}
-//
-//	if (*sz == '\r')
-//	{
-//		DOGE_ASSERT_MESSAGE(*(sz + 1) == '\n', "Symbol ControlReturn can only be followed by a LineReturn symbol.\n");
-//		sz += 2;
-//	}
-//	else if (*sz == '\\' && LookAheadSzOnce(sz + 1) == '\n')
-//	{
-//		sz = AdvanceSzOnce(sz + 1);
-//	}
-//	
 //	if (isMultiLineCommentStart(ctx.HeadCStr()))
 //	{
 //		SubStrLoc mlCommentSubLoc = GetMultiLineCommentSubLoc(ctx);
@@ -812,52 +786,6 @@ bool getCharEnclosedString(StrCTX& ctx, char c_open, char c_close,
 //		}
 //
 //		return ' '; // Default separator
-//	}
-//}
-//
-//char LookAheadCtxOnce(StrCTX& ctx)
-//{
-//	if (ctx.IsEnded())
-//	{
-//		DOGE_ASSERT_ALWAYS_MESSAGE("Unexpected EOL.\n");
-//	}
-//
-//	if (ctx.HeadChar() == '\r')
-//	{
-//		ctx.AdvanceHead();
-//		DOGE_ASSERT_MESSAGE(ctx.HeadChar() == '\n', "Symbol ControlReturn can only be followed by a LineReturn symbol.\n");
-//
-//		return LookAheadSzOnce(sz);
-//	}
-//
-//	if (*sz == '\\' && LookAheadSzOnce(sz + 1) == '\n')
-//	{
-//		sz = AdvanceSzOnce(sz);
-//
-//		return LookAheadSzOnce(sz);
-//	}
-//}
-//
-//char LookAheadSzOnce(const char* sz)
-//{
-//	if (!*sz)
-//	{
-//		DOGE_ASSERT_ALWAYS_MESSAGE("Unexpected EOL.\n");
-//	}
-//
-//	if (*sz == '\r')
-//	{
-//		DOGE_ASSERT_MESSAGE(*(sz + 1) == '\n', "Symbol ControlReturn can only be followed by a LineReturn symbol.\n");
-//		++sz;
-//
-//		return LookAheadSzOnce(sz);
-//	}
-//
-//	if (*sz == '\\' && LookAheadSzOnce(sz + 1) == '\n')
-//	{
-//		sz = AdvanceSzOnce(sz);
-//
-//		return LookAheadSzOnce(sz);
 //	}
 //}
 
@@ -921,6 +849,7 @@ bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent, b
 
 	if (ctx.IsEnded())
 	{
+		CTX_ERROR(ctx, "Unexpected End of Line");
 		return false;
 	}
 
@@ -929,52 +858,11 @@ bool retrieveMultiLinePPContent(StrCTX& ctx, std::string& strMultiLineContent, b
 		strMultiLineContent += ConsumeChar(ctx);
 	}
 
-	//strMultiLineContent = mlContentSubLoc.ExtractSubStr(ctx.baseStr);
-
-	//ctx.SetHead(mlContentSubLoc.m_end);
-
 	return true;
-
-	/*
-	StrCItT itMultiLineContentPartStart = ctx.head;
-	StrCItT itMultiLineContentPartEnd;
-
-	bool bLineBreakFound = false;
-
-	strMultiLineContent.clear();
-
-	while (!ctx.IsEnded() && !isLineReturn(ctx.HeadCStr()))
-	{
-		StrSizeT lastLRLength;
-		if (ctx.HeadChar() == '\\' && isLineReturn(ctx.HeadCStr() + 1, &lastLRLength)) // Skip line break
-		{
-			itMultiLineContentPartEnd = ctx.head;
-			strMultiLineContent.append(itMultiLineContentPartStart, itMultiLineContentPartEnd);
-
-			ctx.Advance(1 + lastLRLength);
-			itMultiLineContentPartStart = ctx.head;
-		}
-		else
-		{
-			DOGE_ASSERT(skipCtxHeadToNextValid(ctx));
-			ctx.Advance(1);
-		}
-	}
-
-	itMultiLineContentPartEnd = ctx.head;
-	strMultiLineContent.append(itMultiLineContentPartStart, itMultiLineContentPartEnd);
-
-	return true;
-	*/
 }
 
 bool handleDirectiveContent_Include(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!isHSpace(LookChar(ctx)))
-	{
-		return false;
-	}
-
 	skipHSpaces(ctx);
 
 	char enclosing_c_open;
@@ -997,30 +885,37 @@ bool handleDirectiveContent_Include(StrCTX& ctx, StrSizeT directiveStartPos)
 	}
 	else
 	{
+		CTX_ERROR(ctx, "#include directive opening delimiter for included filename was not found");
 		return false;
 	}
 
 	std::string strEnclosed;
 	if (!getCharEnclosedString(ctx, enclosing_c_open, enclosing_c_close, strEnclosed))
 	{
+		CTX_ERROR(ctx, "Could not retrieve the included filename between opening %c and closing %c", enclosing_c_open, enclosing_c_close);
 		return false;
 	}
 
 	std::string strIncludedFile;
 	if (!readFileToString(strEnclosed.c_str(), strIncludedFile))
 	{
+		CTX_ERROR(ctx, "Could not read included file '%s'", strEnclosed.c_str());
 		return false;
 	}
 
-	StrCTX includedCtx(strIncludedFile, strEnclosed);
+	StrCTX includedCtx(std::move(strIncludedFile), strEnclosed);
 	CleanupAndCheckStrBeforeInclude(includedCtx);
+
+	preprocess_file_string(includedCtx);
+
+	ctx.AddIncludedContext(includedCtx, directiveStartPos);
+	ctx.m_includedScopeInfo.AddToSons(includedCtx.m_includedScopeInfo, directiveStartPos);
 
 	SubStrLoc replacedByIncludeZone{ directiveStartPos, ctx.CurrentPos() };
 	ctx.SetHead(directiveStartPos);
 	ctx.m_bInLineStart = true; // Start of file means start of line
 
-	ctx.Replace(replacedByIncludeZone, strIncludedFile, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
-	g_globalCtx.m_includedScopeInfo.MergeFromMovedIncludedScopeInfo(std::move(includedCtx.m_includedScopeInfo), directiveStartPos);
+	ctx.Erase(replacedByIncludeZone, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
 
 	return true;
 }
@@ -1091,7 +986,7 @@ bool decomposeStringCleanHSpaces(const std::string& strIn, char sep, std::vector
 	return true;
 }
 
-bool decomposeStringCleanHSpacesIgnoreSpaceEnclosed(const std::string& strIn, char sep, std::vector<std::string>& vOutStrDecomposed)
+bool decomposeStringCleanHSpacesIgnoreSpaceEnclosed(const std::string& strIn, char sep, std::vector<std::string>& vOutStrDecomposed, const char** outSzErrorMsg = NULL)
 {
 	StrSizeT sepPos;
 
@@ -1118,7 +1013,16 @@ bool decomposeStringCleanHSpacesIgnoreSpaceEnclosed(const std::string& strIn, ch
 		else if (*sz == ')')
 		{
 			--pileCount;
-			DOGE_ASSERT(pileCount >= 0);
+			//DOGE_ASSERT(pileCount >= 0);
+			if (pileCount < 0)
+			{
+				if (outSzErrorMsg)
+				{
+					sprintf(g_sprintf_buffer, "Incorrect parenthesis enclosing, reached final closing to soon");
+					*outSzErrorMsg = g_sprintf_buffer;
+				}
+				return false;
+			}
 		}
 		else if (*sz == ',' && pileCount == 0)
 		{
@@ -1132,6 +1036,16 @@ bool decomposeStringCleanHSpacesIgnoreSpaceEnclosed(const std::string& strIn, ch
 		}
 
 		++sz;
+	}
+
+	if (pileCount > 0)
+	{
+		if (outSzErrorMsg)
+		{
+			sprintf(g_sprintf_buffer, "Incorrect parenthesis enclosing, did not reach final closing");
+			*outSzErrorMsg = g_sprintf_buffer;
+		}
+		return false;
 	}
 
 	sepSubLoc.m_end = strIn.length(); // Take remaining
@@ -1148,12 +1062,14 @@ bool parseFunctionMacroDefinition(StrCTX& ctx, Macro& outFnMacro)
 {
 	if (!(LookChar(ctx) == '('))
 	{
+		CTX_ERROR(ctx, "Function macro '%s' args declaration needs opening parenthesis", outFnMacro.m_name.c_str());
 		return false; // Args declaration needs opening parenthesis
 	}
 
 	std::string strMacroArgs;
 	if (!getCharEnclosedString(ctx, '(', ')', strMacroArgs))
 	{
+		CTX_ERROR(ctx, "Function macro '%s' args declaration not correctly terminated", outFnMacro.m_name.c_str());
 		return false; // Args declaration not correctly terminated
 	}
 
@@ -1162,14 +1078,17 @@ bool parseFunctionMacroDefinition(StrCTX& ctx, Macro& outFnMacro)
 
 	if (std::any_of(vStrArgs.cbegin(), vStrArgs.cend(), [](const std::string& str) { return str.empty(); }))
 	{
+		CTX_ERROR(ctx, "Empty parameter found in function macro '%s' declaration", outFnMacro.m_name.c_str());
 		return false; // Empty parameter
 	}
 
 	for (VEC_SIZE_T(vStrArgs) nArg = 0; nArg < vStrArgs.size(); ++nArg)
 	{ 
 		const auto& strArg = vStrArgs[nArg];
-		if (std::find(vStrArgs.cbegin() + nArg + 1, vStrArgs.cend(), strArg) != vStrArgs.cend())
+		decltype(vStrArgs.cbegin()) dupIt;
+		if ((dupIt = std::find(vStrArgs.cbegin() + nArg + 1, vStrArgs.cend(), strArg)) != vStrArgs.cend())
 		{
+			CTX_ERROR(ctx, "Duplicate parameter '%s' in function macro '%s' declaration", dupIt->c_str(), outFnMacro.m_name.c_str());
 			return false; // Duplicate parameter
 		}
 	}
@@ -1190,13 +1109,14 @@ bool parseFunctionMacroDefinition(StrCTX& ctx, Macro& outFnMacro)
 	}
 
 	SubStrLoc idLoc;
-	StrCTX defineContentCtx{ strDefineContent, "" };
+	StrCTX defineContentCtx{ std::move(std::string(strDefineContent)), "" };
 	bool isEOS = false;
 
 	while (!isEOS)
 	{
 		if (!getNextIdentifierLocation(defineContentCtx, idLoc, isEOS))
 		{
+			CTX_ERROR(ctx, "Error retrieving next identifier");
 			return false; // Error retrieving next identifier
 		}
 
@@ -1264,10 +1184,6 @@ bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 			return false;
 		}
 
-		//sprintf(g_sprintf_buffer, "<<< #define fn : '%s', args number : '%d', content : '%s' >>>", strDefine.c_str(), macro.m_args.size(), macro.m_strContent.c_str());
-		//SubStrLoc replacedByTmpDefineInfoZone{ directiveStartPos, ctx.CurrentPos() };
-		//ctx.Replace(replacedByTmpDefineInfoZone, std::string(g_sprintf_buffer), StrCTX::e_insidereplacedzonebehaviour_ASSERT);
-
 		gMacroInsert(strDefine, std::move(macro));
 
 		ctx.Erase({ directiveStartPos, ctx.CurrentPos() }, StrCTX::e_insidereplacedzonebehaviour_GOTO_END);
@@ -1291,10 +1207,6 @@ bool handleDirectiveContent_Define(StrCTX& ctx, StrSizeT directiveStartPos)
 				return false;
 			}
 		}
-
-		//sprintf(g_sprintf_buffer, "<<< #define : '%s', content : '%s' >>>", strDefine.c_str(), macro.m_strContent.c_str());
-		//SubStrLoc replacedByTmpDefineInfoZone{ directiveStartPos, ctx.CurrentPos() };
-		//ctx.Replace(replacedByTmpDefineInfoZone, std::string(g_sprintf_buffer), StrCTX::e_insidereplacedzonebehaviour_ASSERT);
 
 		gMacroInsert(strDefine, std::move(macro));
 
@@ -1347,7 +1259,7 @@ bool handleDirectiveContent_Error(StrCTX& ctx, StrSizeT directiveStartPos)
 		return false;
 	}
 
-	DOGE_ASSERT_ALWAYS_MESSAGE("#error directive : %s.\n", strMultilineContent.c_str());
+	CTX_ERROR(ctx, "Triggered #error directive : %s", strMultilineContent.c_str());
 
 	return true;
 }
@@ -1369,10 +1281,6 @@ bool handleDirectiveContent_Pragma(StrCTX& ctx, StrSizeT directiveStartPos)
 	}
 
 	ctx.Erase({ directiveStartPos, ctx.CurrentPos() }, StrCTX::e_insidereplacedzonebehaviour_GOTO_END);
-
-	//sprintf(g_sprintf_buffer, "<<< #pragma : '%s', content : '%s' >>>", strPragmaId.c_str(), strMultilineContent.c_str());
-	//SubStrLoc replacedByTmpPragmaInfoZone{ directiveStartPos, ctx.CurrentPos() };
-	//ctx.Replace(replacedByTmpPragmaInfoZone, std::string(g_sprintf_buffer), StrCTX::e_insidereplacedzonebehaviour_ASSERT);
 
 	return true;
 }
@@ -1404,11 +1312,8 @@ bool handleDirectiveContent_If(StrCTX& ctx, StrSizeT directiveStartPos)
 
 	std::string strDebugExpression = expression->GetStringExpression();
 
-	//printf("%s#if at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
-	//	directiveStartPos, bYieldedValue ? "'true'" : "'false'");
-
 	bool bMustSkip;
-	g_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+	ctx.m_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
 	if (bMustSkip)
 	{
@@ -1435,16 +1340,13 @@ bool handleDirectiveContent_Ifdef(StrCTX& ctx, StrSizeT directiveStartPos)
 
 	bool bYieldedValue = gMacroIsDefined(strTestedIdentifier);
 
-	if (!advanceToNextLineExpectHSpaceOnly(ctx))
+	if (!advanceToLineReturnExpectHSpaceOnly(ctx))
 	{
 		return false; // Garbage after tested #ifdef identifier
 	}
 
-	//printf("%s#ifdef at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
-	//	directiveStartPos, bYieldedValue ? "'true'" : "'false'");
-
 	bool bMustSkip;
-	g_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+	ctx.m_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 	
 	if (bMustSkip)
 	{
@@ -1471,16 +1373,13 @@ bool handleDirectiveContent_Ifndef(StrCTX& ctx, StrSizeT directiveStartPos)
 
 	bool bYieldedValue = !gMacroIsDefined(strTestedIdentifier);
 
-	if (!advanceToNextLineExpectHSpaceOnly(ctx))
+	if (!advanceToLineReturnExpectHSpaceOnly(ctx))
 	{
 		return false; // Garbage after tested #ifdef identifier
 	}
 
-	//printf("%s#ifndef at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
-	//	directiveStartPos, bYieldedValue ? "'true'" : "'false'");
-
 	bool bMustSkip;
-	g_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+	ctx.m_ifCtx.AddIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
 	if (bMustSkip)
 	{
@@ -1512,11 +1411,8 @@ bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 
 	std::string strDebugExpression = expression->GetStringExpression();
 
-	//printf("%s#elif at pos %d yields %s\n", tabIndentStr(g_ifCtx.TopLevelCount()),
-	//	directiveStartPos, bYieldedValue ? "'true'" : "'false'");
-
 	bool bMustSkip;
-	g_ifCtx.UpdateElseIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+	ctx.m_ifCtx.UpdateElseIf(ctx, bYieldedValue, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
 	if (bMustSkip)
 	{
@@ -1528,13 +1424,13 @@ bool handleDirectiveContent_Elif(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Else(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!advanceToNextLineExpectHSpaceOnly(ctx))
+	if (!advanceToLineReturnExpectHSpaceOnly(ctx))
 	{
 		return false; // Garbage after #else
 	}
 
 	bool bMustSkip;
-	g_ifCtx.UpdateElse(ctx, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+	ctx.m_ifCtx.UpdateElse(ctx, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
 	if (bMustSkip)
 	{
@@ -1546,13 +1442,13 @@ bool handleDirectiveContent_Else(StrCTX& ctx, StrSizeT directiveStartPos)
 
 bool handleDirectiveContent_Endif(StrCTX& ctx, StrSizeT directiveStartPos)
 {
-	if (!advanceToNextLineExpectHSpaceOnly(ctx))
+	if (!advanceToLineReturnExpectHSpaceOnly(ctx))
 	{
 		return false; // Garbage after #else
 	}
 
 	bool bMustSkip;
-	g_ifCtx.UpdateEndif(ctx, directiveStartPos, ctx.CurrentPos(), bMustSkip);
+	ctx.m_ifCtx.UpdateEndif(ctx, directiveStartPos, ctx.CurrentPos(), bMustSkip);
 
 	if (bMustSkip)
 	{
@@ -1608,6 +1504,12 @@ void preprocess_file_string(StrCTX& ctx, bool* bPerformedMacroSubstitution)
 		{
 			ConsumeChar(ctx);
 		}
+		else if (c == '$')
+		{
+			LineInfo lineInfo = ctx.m_includedScopeInfo.GetCharPosLineInfo(ctx.CurrentPos());
+			printf("$ encountered at line %d char pos %d \n", 1 + lineInfo.line, 1 + lineInfo.charPosInLine);
+			ConsumeChar(ctx);
+		}
 		else if (c == '\n')
 		{
 			//printf("Line return at line %d.\n", ctx.lineNumber);
@@ -1621,25 +1523,31 @@ void preprocess_file_string(StrCTX& ctx, bool* bPerformedMacroSubstitution)
 			EDirective eDirective;
 			if (!retrieveDirectiveType(ctx, eDirective, directiveStartPos))
 			{
-				DOGE_ASSERT_ALWAYS_MESSAGE("Error retrieving directive type.\n");
+				CTX_ERROR(ctx, "Error retrieving directive type");
 			}
 
 			if (!handleDirectiveContent(ctx, eDirective, directiveStartPos))
 			{
-				DOGE_ASSERT_ALWAYS_MESSAGE("Error at line %d. Invalid directive content.\n", ctx.m_lineNumber);
+				CTX_ERROR(ctx, "Invalid directive content");
 			}
 		}
 		else if (isLiteralDelimiterChar(c))
 		{
 			ConsumeChar(ctx);
-			DOGE_ASSERT_MESSAGE(advanceToEndOfLiteral(ctx, c), "Error at line %d. Invalid literal termination.\n", ctx.m_lineNumber);
+			if (!advanceToEndOfLiteral(ctx, c))
+			{
+				CTX_ERROR(ctx, "Invalid literal termination");
+			}
 		}
 		else if (LUT_validIdFirstChar[c])
 		{
 			std::string strId;
 			SubStrLoc idSubLoc;
 			idSubLoc.m_start = ctx.CurrentPos();
-			DOGE_ASSERT_MESSAGE(retrieveIdentifier(ctx, strId), "Error at line %d. Could not retrieve identifier.\n", ctx.m_lineNumber);
+			if (!retrieveIdentifier(ctx, strId))
+			{
+				CTX_ERROR(ctx, "Could not retrieve identifier");
+			}
 			g_encounteredIdentifiers.push_back(strId);
 			idSubLoc.m_end = ctx.CurrentPos();
 
@@ -1653,14 +1561,17 @@ void preprocess_file_string(StrCTX& ctx, bool* bPerformedMacroSubstitution)
 				{
 					std::string strMacroContent = macro.m_strContent;
 
-					bool bNeedsOneMorePass;					
+					bool bNeedsOneMorePass;
+					StrCTX macroContentCtx(std::move(strMacroContent), "");
+
 					do 
 					{
-						preprocess_file_string(StrCTX(strMacroContent, ""), &bNeedsOneMorePass);
+						preprocess_file_string(macroContentCtx, &bNeedsOneMorePass);
+						macroContentCtx.ResetHead();
 					} while (bNeedsOneMorePass);
 
 					ctx.SetHead(idSubLoc.m_start);
-					ctx.Replace(idSubLoc, strMacroContent, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+					ctx.Replace(idSubLoc, macroContentCtx.m_baseStr, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
 				}
 				else
 				{
@@ -1672,10 +1583,18 @@ void preprocess_file_string(StrCTX& ctx, bool* bPerformedMacroSubstitution)
 					strMacroArgs = macroArgsSubLoc.ExtractSubStr(ctx.m_baseStr);
 
 					std::vector<std::string> vStrArgs;
-					//decomposeStringCleanHSpaces(strMacroArgs, ',', vStrArgs);
-					decomposeStringCleanHSpacesIgnoreSpaceEnclosed(strMacroArgs, ',', vStrArgs);
+					const char* szErrorMsg;
+					if (!decomposeStringCleanHSpacesIgnoreSpaceEnclosed(strMacroArgs, ',', vStrArgs, &szErrorMsg))
+					{
+						CTX_ERROR(ctx, "In parsing function macro '%s' call args before expansion : %s", macro.m_name.c_str(), szErrorMsg);
+					}
 
 					std::string strFnMacroPatchedContent;
+					if (vStrArgs.size() != macro.m_args.size())
+					{
+						CTX_ERROR(ctx, "Function Macro '%s' expects %d parameters (given %d : '%s')", 
+							macro.m_name.c_str(), macro.m_args.size(), vStrArgs.size(), strMacroArgs.c_str());
+					}
 					macro.PatchString(vStrArgs, strFnMacroPatchedContent);
 
 					ctx.SetHead(macroArgsSubLoc.m_end);
@@ -1684,13 +1603,16 @@ void preprocess_file_string(StrCTX& ctx, bool* bPerformedMacroSubstitution)
 					idSubLoc.m_end = ctx.CurrentPos();
 
 					bool bNeedsOneMorePass;
+					StrCTX fnMacroContentCtx(std::move(strFnMacroPatchedContent), "");
+
 					do
 					{
-						preprocess_file_string(StrCTX(strFnMacroPatchedContent, ""), &bNeedsOneMorePass);
+						preprocess_file_string(fnMacroContentCtx, &bNeedsOneMorePass);
+						fnMacroContentCtx.ResetHead();
 					} while (bNeedsOneMorePass);
 
 					ctx.SetHead(idSubLoc.m_start);
-					ctx.Replace(idSubLoc, strFnMacroPatchedContent, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
+					ctx.Replace(idSubLoc, fnMacroContentCtx.m_baseStr, StrCTX::e_insidereplacedzonebehaviour_GOTO_START);
 				}
 			}
 		}
@@ -1705,7 +1627,7 @@ void preprocess_if_directive_string(std::string& strBuffer, bool* bPerformedMacr
 {
 	if (bPerformedMacroSubstitution) *bPerformedMacroSubstitution = false;
 
-	StrCTX ctx{ strBuffer, "" };
+	StrCTX ctx{ std::move(strBuffer), "" };
 
 	while (!ctx.IsEnded())
 	{
@@ -1771,8 +1693,11 @@ void preprocess_if_directive_string(std::string& strBuffer, bool* bPerformedMacr
 						strMacroArgs = macroArgsSubLoc.ExtractSubStr(ctx.m_baseStr);
 
 						std::vector<std::string> vStrArgs;
-						//decomposeStringCleanHSpaces(strMacroArgs, ',', vStrArgs);
-						decomposeStringCleanHSpacesIgnoreSpaceEnclosed(strMacroArgs, ',', vStrArgs);
+						const char* szErrorMsg;
+						if (!decomposeStringCleanHSpacesIgnoreSpaceEnclosed(strMacroArgs, ',', vStrArgs, &szErrorMsg))
+						{
+							CTX_ERROR(ctx, "In parsing function macro '%s' call args before expansion : %s", macro.m_name.c_str(), szErrorMsg);
+						}
 
 						std::string strFnMacroPatchedContent;
 						macro.PatchString(vStrArgs, strFnMacroPatchedContent);
@@ -1799,6 +1724,8 @@ void preprocess_if_directive_string(std::string& strBuffer, bool* bPerformedMacr
 			ConsumeChar(ctx);
 		}
 	}
+
+	strBuffer = std::move(ctx.m_baseStr);
 }
 
 static char IndirectLUT_CharAsCStr[256 * 2];
@@ -1825,7 +1752,7 @@ bool CArrayIsPresent(const T carray[], size_t arraySize, T val)
 
 std::unique_ptr<const Expression> EvaluateStringExpression(std::string strExp)
 {
-	StrCTX expStrCtx(strExp, "");
+	StrCTX expStrCtx(std::move(strExp), "");
 
 	static const char singleOnlyCharSymbol[] = "?:^~%*/()";
 	static const char doubleMaybeCharSymbol[] = "!&|+-><=";
@@ -1961,10 +1888,11 @@ int main(int argc, char* argv[])
 	std::string strFile;
 	DOGE_ASSERT(readFileToString(argv[1], strFile));
 
-	new (&g_globalCtx) StrCTX(strFile, argv[1]);
-	CleanupAndCheckStrBeforeInclude(g_globalCtx);
-	g_globalCtx.SetHead(0);
-	preprocess_file_string(g_globalCtx);
+	StrCTX mainFileStrCtx(std::move(strFile), argv[1]);
+	CleanupAndCheckStrBeforeInclude(mainFileStrCtx);
+	preprocess_file_string(mainFileStrCtx);
+
+	mainFileStrCtx.PatchWithIncludedContexts();
 
 	//std::cout << "===================== BOF =====================\n";
 	//std::cout << strFile;
@@ -1986,7 +1914,7 @@ int main(int argc, char* argv[])
 
 	//coutlr;
 
-	writeStringToFile(argv[2], strFile);
+	writeStringToFile(argv[2], mainFileStrCtx.m_baseStr);
 
 	return 0;
 }

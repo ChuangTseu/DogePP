@@ -29,10 +29,10 @@ struct Macro {
 
 	bool PatchString(std::vector<std::string> vStrArgs, std::string& outStr) const
 	{
-		DOGE_ASSERT(m_args.size() == vStrArgs.size());
+		DOGE_DEBUG_ASSERT(m_args.size() == vStrArgs.size());
 
 		outStr = m_strContent;
-		StrCTX tmpCtx(outStr, "");
+		StrCTX tmpCtx(std::move(outStr), "");
 
 		std::vector<MacroArg> tmpMacroArgs = m_args;
 
@@ -50,6 +50,7 @@ struct Macro {
 			}
 		}
 
+		outStr = std::move(tmpCtx.m_baseStr);
 		return true;
 	}
 };

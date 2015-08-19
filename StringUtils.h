@@ -35,17 +35,22 @@ struct SubStrLoc {
 		m_end += distance;
 	}
 
-	bool IsInside(StrSizeT pos)
+	bool IsPosInside(StrSizeT pos)
 	{
 		return pos >= m_start && pos < m_end;
 	}
 
-	bool IsBefore(StrSizeT pos)
+	bool IsSubLocInside(SubStrLoc subLoc)
+	{
+		return subLoc.m_start >= m_start && subLoc.m_end < m_end;
+	}
+
+	bool IsPosBefore(StrSizeT pos)
 	{
 		return pos < m_start;
 	}
 
-	bool IsAfter(StrSizeT pos)
+	bool IsPosAfter(StrSizeT pos)
 	{
 		return pos >= m_end;
 	}

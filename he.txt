@@ -1,7 +1,13 @@
 
-#include "bob.xmlh"
-
 #define BOB_DEF "MICHEL_LE"
+
+#include "hi.txt"
+#include "hi.txt"
+#include "hi.txt"
+
+#include "dummy.h"
+#include "dummy.h"
+#include "dummy.h"
 
 #define HEY(val /*theValue*/,eEnum /* theEnum   */  ,   /*dummyTesterArg*/ vam /*Reaaly, it's a dummy*/) \
     g_i = hick(val); g_ret = g_eMult * eEnum; while (g_i >= 0) { \
@@ -79,10 +85,6 @@ over multip\ele lines";
 over multip\ele lines";
 
 #ifdef ASTUCE_DE_GROS
-#include "dummy.h"
-#include "dummy.h"
-#include "dummy.h"
-#include "dummy.h"
 #else
 #endif
 

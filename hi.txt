@@ -1,0 +1,4 @@
+
+void HI_Included() {
+	const char* withStr = BOB_DEF;
+}
